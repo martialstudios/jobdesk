@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: shellcheck + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: shellcheck
+        run: shellcheck -s bash install.sh bin/jobdesk tests/*.sh
+      - name: unit tests
+        run: bash tests/unit.sh
+
+  e2e:
+    name: install end to end (${{ matrix.os }})
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      # /bin/bash is 3.2 on macOS: the shell a friend's Mac runs the installer with.
+      - name: unit tests (system bash)
+        run: /bin/bash --version | head -n 1 && /bin/bash tests/unit.sh
+      - name: install, run, re-run, uninstall
+        run: /bin/bash tests/e2e.sh
+
+  update:
+    name: update an older career-ops (macOS)
+    needs: lint
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      E2E_OLD_CAREER_OPS: "1.33.0"
+    steps:
+      - uses: actions/checkout@v5
+      - name: install 1.33.0, then update
+        run: /bin/bash tests/e2e.sh
