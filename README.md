@@ -12,6 +12,12 @@ posting against your CV, writes a tailored CV and a cover letter for that compan
 fills in the application form for you to check, and keeps a tracker of every
 application. It runs on your Mac with your own AI account.
 
+<p align="center">
+  <img src="assets/screenshots/tracker.png" width="49%" alt="The tracker: every application with its fit score and status">
+  <img src="assets/screenshots/report.png" width="49%" alt="One job's evaluation: fit score, verdict, tailored CV and an Apply button">
+</p>
+<p align="center"><sub>career-ops's web UI in JobDesk, shown with career-ops's sample data: the tracker, and one job's evaluation.</sub></p>
+
 > JobDesk is an unofficial installer. It sets up career-ops and its official web UI,
 > but it isn't made by, affiliated with, or endorsed by the career-ops project.
 
