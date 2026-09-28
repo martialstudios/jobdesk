@@ -14,6 +14,8 @@ if [ -z "${HOME:-}" ]; then
   export HOME
 fi
 
+HOME_MARKER=".jobdesk-home"
+
 # This script lives in <JOBDESK_HOME>/bin (often reached via a ~/.local/bin
 # link), so find the install it belongs to rather than trusting $HOME.
 jobdesk_home_of_script() {
@@ -29,7 +31,7 @@ jobdesk_home_of_script() {
 }
 if [ -z "${JOBDESK_HOME:-}" ]; then
   JOBDESK_HOME=$(jobdesk_home_of_script)
-  [ -f "$JOBDESK_HOME/config.env" ] || [ -d "$JOBDESK_HOME/ui" ] || JOBDESK_HOME="$HOME/.jobdesk"
+  [ -f "$JOBDESK_HOME/$HOME_MARKER" ] || JOBDESK_HOME="$HOME/.jobdesk"
 fi
 JOBDESK_REPO="${JOBDESK_REPO:-martialstudios/jobdesk}"
 JOBDESK_REF="${JOBDESK_REF:-main}"
@@ -39,12 +41,15 @@ LOG_DIR="$JOBDESK_HOME/logs"
 SERVER_LOG="$LOG_DIR/server.log"
 PID_FILE="$RUN_DIR/server.pid"
 PORT_FILE="$RUN_DIR/server.port"
+START_LOCK="$RUN_DIR/start.lock"
+INSTALL_LOCK="$JOBDESK_HOME/.install-lock"
 UI_WEB="$JOBDESK_HOME/ui/current/web"
 NODE_BIN="$JOBDESK_HOME/node/bin/node"
+DEFAULT_PORT=4788
 
 # Defaults; config.env (written by the installer) overrides them.
 JOBDESK_CAREER_OPS_DIR="$HOME/career-ops"
-JOBDESK_PORT=4788
+JOBDESK_PORT=$DEFAULT_PORT
 JOBDESK_AI=claude
 JOBDESK_APP=""
 if [ -f "$CONFIG_FILE" ]; then
@@ -53,12 +58,20 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 QUIET=0
+HAVE_START_LOCK=0
 
 say() { [ "$QUIET" = 1 ] || printf '%s\n' "$*"; }
 err() { printf 'jobdesk: %s\n' "$*" >&2; }
 die() { err "$*"; exit 1; }
 
 is_mac() { [ "$(uname -s)" = Darwin ]; }
+
+# A usable local port: digits only, no leading zero, 1024-65000.
+valid_port() {
+  case "$1" in ''|*[!0-9]*|0*|??????*) return 1 ;; esac
+  [ "$1" -ge 1024 ] && [ "$1" -le 65000 ]
+}
+valid_port "$JOBDESK_PORT" || JOBDESK_PORT=$DEFAULT_PORT
 
 # PATH for the server and every AI CLI it launches. The app starts us with
 # launchd's bare PATH, so spell out every place a CLI is commonly installed.
@@ -87,14 +100,30 @@ pick_port() {
 }
 
 # Our server answers /api/version with the career-ops core version in it, which
-# tells it apart from whatever else might be on the port.
+# tells it apart from whatever else might be on the port. Never via a proxy.
 healthy() {
   [ -n "${1:-}" ] || return 1
-  curl -fsS --max-time 3 "$(url_for "$1")/api/version" 2>/dev/null | grep -q '"coreVersion"'
+  curl -fsS --noproxy '*' --max-time 3 "$(url_for "$1")/api/version" 2>/dev/null | grep -q '"coreVersion"'
 }
 
-# Only trust a PID file that still points at a Next.js server: after a reboot
-# the number can belong to anything.
+# Start time of a process. Stored next to every PID we keep, so a number the
+# system has since reused for something else never counts as ours.
+proc_start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/  */ /g; s/^ //; s/ $//'; }
+
+# write_pid_file FILE PID
+write_pid_file() { { printf '%s\n' "$2"; proc_start "$2"; } > "$1"; }
+
+# pid_file_alive FILE: the process recorded in FILE is still the same process.
+pid_file_alive() {
+  local pid start
+  pid=$(sed -n 1p "$1" 2>/dev/null)
+  start=$(sed -n 2p "$1" 2>/dev/null)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 1
+  [ -z "$start" ] || [ "$(proc_start "$pid")" = "$start" ]
+}
+
+# Only trust a PID file that still points at the Next.js server we started.
 is_server_pid() {
   local pid="${1:-}" cmd
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
@@ -108,32 +137,62 @@ is_server_pid() {
 
 running_pid() {
   local pid
-  pid=$(cat "$PID_FILE" 2>/dev/null) || return 1
+  pid_file_alive "$PID_FILE" || return 1
+  pid=$(sed -n 1p "$PID_FILE")
   is_server_pid "$pid" || return 1
   printf '%s' "$pid"
 }
 
-running_port() { cat "$PORT_FILE" 2>/dev/null; }
+running_port() { sed -n 1p "$PORT_FILE" 2>/dev/null; }
 
-# Stop a server process and its process group (the AI CLI runs it started).
+# Every process descended from $1.
+descendants_of() {
+  local table queue next p child found=""
+  table=$(ps -A -o pid=,ppid= 2>/dev/null) || return 0
+  queue="$1"
+  while [ -n "$queue" ]; do
+    next=""
+    for p in $queue; do
+      for child in $(printf '%s\n' "$table" | awk -v pp="$p" '$2 == pp {print $1}'); do
+        found="$found $child"
+        next="$next $child"
+      done
+    done
+    queue="$next"
+  done
+  printf '%s' "$found"
+}
+
+# Stop the server and everything it started. Some AI runs get process groups
+# of their own (Codex's are detached), so signal each group a process in the
+# tree leads, plus every process, and never our own group.
 stop_pid() {
-  local pid="$1" pgid i
-  pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
-  if [ "$pgid" = "$pid" ]; then
-    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
-  else
-    kill -TERM "$pid" 2>/dev/null
-  fi
+  local pid="$1" procs p g groups="" mine alive i
+  procs="$pid $(descendants_of "$pid")"
+  mine=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+  for p in $procs; do
+    g=$(ps -o pgid= -p "$p" 2>/dev/null | tr -d ' ')
+    if [ -z "$g" ] || [ "$g" = "$mine" ]; then
+      continue
+    fi
+    # Only groups led by a process in the tree; other groups aren't ours.
+    case " $procs " in *" $g "*) ;; *) continue ;; esac
+    case " $groups " in *" $g "*) ;; *) groups="$groups $g" ;; esac
+  done
+  for g in $groups; do kill -TERM -- "-$g" 2>/dev/null; done
+  for p in $procs; do kill -TERM "$p" 2>/dev/null; done
   i=0
   while [ $i -lt 20 ]; do
-    kill -0 "$pid" 2>/dev/null || return 0
+    alive=""
+    for p in $procs; do
+      kill -0 "$p" 2>/dev/null && alive="$alive $p"
+    done
+    [ -z "$alive" ] && return 0
     sleep 0.5
     i=$(( i + 1 ))
   done
-  if [ "$pgid" = "$pid" ]; then
-    kill -KILL -- "-$pid" 2>/dev/null
-  fi
-  kill -KILL "$pid" 2>/dev/null
+  for g in $groups; do kill -KILL -- "-$g" 2>/dev/null; done
+  for p in $procs; do kill -KILL "$p" 2>/dev/null; done
   return 0
 }
 
@@ -147,16 +206,47 @@ rotate_log() {
 }
 
 # An installer run holds this lock while it swaps Node.js or the web UI.
-installing() {
-  local holder
-  holder=$(cat "$JOBDESK_HOME/.install-lock/pid" 2>/dev/null) || return 1
-  [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null
+installing() { pid_file_alive "$INSTALL_LOCK/pid"; }
+
+# One `start` at a time, or two could each launch a server.
+acquire_start_lock() {
+  local i=0
+  mkdir -p "$RUN_DIR"
+  while ! mkdir "$START_LOCK" 2>/dev/null; do
+    if ! pid_file_alive "$START_LOCK/pid"; then
+      # A lock made a moment ago may not have its pid file yet.
+      if [ ! -f "$START_LOCK/pid" ] && [ $i -lt 2 ]; then
+        sleep 1
+        i=$(( i + 1 ))
+        continue
+      fi
+      rm -rf "$START_LOCK"
+      continue
+    fi
+    [ $i -lt 120 ] || die "Another 'jobdesk start' is taking too long. Try again in a minute."
+    sleep 1
+    i=$(( i + 1 ))
+  done
+  write_pid_file "$START_LOCK/pid" $$
+  HAVE_START_LOCK=1
+  trap release_start_lock EXIT
+}
+
+release_start_lock() {
+  if [ "$HAVE_START_LOCK" = 1 ]; then
+    rm -rf "$START_LOCK"
+    HAVE_START_LOCK=0
+  fi
+}
+
+ui_ready() {
+  [ -f "$UI_WEB/.next/BUILD_ID" ] && [ -f "$UI_WEB/node_modules/next/dist/bin/next" ]
 }
 
 check_installed() {
   [ -x "$NODE_BIN" ] || die "JobDesk isn't fully installed (Node.js is missing). Run: jobdesk update"
   [ -f "$UI_WEB/package.json" ] || die "JobDesk isn't fully installed (the web UI is missing). Run: jobdesk update"
-  [ -f "$UI_WEB/.next/BUILD_ID" ] || die "The web UI hasn't been built yet. Run: jobdesk update"
+  ui_ready || die "The web UI isn't fully built. Run: jobdesk update"
   [ -f "$JOBDESK_CAREER_OPS_DIR/VERSION" ] ||
     die "Can't find your career-ops folder at $JOBDESK_CAREER_OPS_DIR. Run: jobdesk update"
 }
@@ -174,9 +264,10 @@ wait_healthy() {
 
 cmd_start() {
   local pid port attempt
+  acquire_start_lock
   if pid=$(running_pid); then
     port=$(running_port)
-    if healthy "$port"; then
+    if wait_healthy "$pid" "$port" 10; then
       say "JobDesk is already running at $(url_for "$port")"
       return 0
     fi
@@ -209,7 +300,7 @@ cmd_start() {
     ) &
     pid=$!
     set +m
-    printf '%s\n' "$pid" > "$PID_FILE"
+    write_pid_file "$PID_FILE" "$pid"
     printf '%s\n' "$port" > "$PORT_FILE"
 
     if wait_healthy "$pid" "$port" 90; then
@@ -332,7 +423,7 @@ cmd_doctor() {
   doctor_check "Node.js $node_version" test -x "$NODE_BIN"
   doctor_check "career-ops $(core_version) at $JOBDESK_CAREER_OPS_DIR" test -f "$JOBDESK_CAREER_OPS_DIR/VERSION"
   doctor_check "career-ops folder is a git checkout (needed for safe updates)" test -d "$JOBDESK_CAREER_OPS_DIR/.git"
-  doctor_check "web UI $(web_version) is built" test -f "$UI_WEB/.next/BUILD_ID"
+  doctor_check "web UI $(web_version) is built" ui_ready
   if name=$(ai_bin_name); then
     if bin=$(ai_cli_path "$name"); then doctor_pass "AI helper: $bin"; else doctor_fail "AI helper '$name' not found (run: jobdesk update)"; fi
   else
@@ -343,6 +434,13 @@ cmd_doctor() {
       doctor_pass "Google Chrome (the Apply feature fills forms in Chrome)"
     else
       doctor_fail "Google Chrome not found (the Apply feature fills forms in Chrome: https://www.google.com/chrome/)"
+    fi
+  fi
+  if [ -d "$INSTALL_LOCK" ]; then
+    if installing; then
+      say "  - an install or update is running right now"
+    else
+      doctor_fail "a stale install lock is left over; remove it with: rm -rf \"$INSTALL_LOCK\""
     fi
   fi
   if running_pid >/dev/null && healthy "$(running_port)"; then
@@ -383,27 +481,39 @@ cmd_login() {
 }
 
 cmd_update() {
-  local tmp url
-  tmp=$(mktemp "${TMPDIR:-/tmp}/jobdesk-install.XXXXXX") || die "Couldn't create a temp file."
+  local dir url rc
+  # A private folder: nothing another user put in /tmp can ride along.
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/jobdesk-update.XXXXXX") || die "Couldn't create a temp folder."
   url="https://raw.githubusercontent.com/$JOBDESK_REPO/$JOBDESK_REF/install.sh"
   say "Downloading the latest JobDesk installer..."
-  if ! curl -fsSL "$url" -o "$tmp"; then
-    rm -f "$tmp"
+  if ! curl -fsSL "$url" -o "$dir/install.sh"; then
+    rm -rf "$dir"
     die "Couldn't download $url — check your internet connection."
   fi
   # A cut-off download must never run: the installer ends with this marker.
-  if ! grep -q '__JOBDESK_INSTALLER_END__' "$tmp"; then
-    rm -f "$tmp"
+  if ! grep -q '__JOBDESK_INSTALLER_END__' "$dir/install.sh"; then
+    rm -rf "$dir"
     die "The installer download was incomplete. Please try again."
   fi
-  bash "$tmp" --update "$@"
-  local rc=$?
-  rm -f "$tmp"
+  JOBDESK_HOME="$JOBDESK_HOME" bash "$dir/install.sh" --update "$@"
+  rc=$?
+  rm -rf "$dir"
   return $rc
 }
 
+# Removes only what JobDesk put in its folder, never the folder wholesale:
+# whatever else lives there (by mistake or not) stays.
 cmd_uninstall() {
-  local answer=y link pid
+  local answer=y link pid entry
+  case "${JOBDESK_HOME%/}" in
+    ''|/|"${HOME%/}") die "Refusing to uninstall from $JOBDESK_HOME." ;;
+  esac
+  [ -f "$JOBDESK_HOME/$HOME_MARKER" ] || die "$JOBDESK_HOME doesn't look like a JobDesk install; nothing removed."
+  case "${JOBDESK_CAREER_OPS_DIR%/}/" in
+    "${JOBDESK_HOME%/}/"*)
+      die "Your career-ops folder ($JOBDESK_CAREER_OPS_DIR) is inside $JOBDESK_HOME. Move it somewhere else first, then uninstall." ;;
+  esac
+  installing && die "JobDesk is being installed or updated right now. Try again when that finishes."
   if [ "${1:-}" != "--yes" ]; then
     [ -t 0 ] || die "Run 'jobdesk uninstall' in the Terminal app (or add --yes)."
     printf 'Remove JobDesk from this Mac? Your career-ops folder (CV, tracker, PDFs)\n'
@@ -427,11 +537,20 @@ cmd_uninstall() {
   if [ -L "$link" ]; then
     case "$(readlink "$link")" in "$JOBDESK_HOME"/*) rm -f "$link" ;; esac
   fi
-  rm -rf "$JOBDESK_HOME"
-  say "Removed $JOBDESK_HOME (JobDesk's private Node.js, web UI build and logs)."
+  for entry in bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock; do
+    rm -rf "${JOBDESK_HOME:?}/$entry"
+  done
+  rm -f "$JOBDESK_HOME/$HOME_MARKER"
+  if rmdir "$JOBDESK_HOME" 2>/dev/null; then
+    say "Removed $JOBDESK_HOME (JobDesk's private Node.js, web UI build and logs)."
+  else
+    say "Removed JobDesk's files from $JOBDESK_HOME; other files in that folder were left alone."
+  fi
   say ""
-  say "Kept: your career-ops folder at $JOBDESK_CAREER_OPS_DIR."
-  say "      Delete it yourself if you no longer need your CV, tracker and PDFs."
+  if [ -d "$JOBDESK_CAREER_OPS_DIR" ]; then
+    say "Kept: your career-ops folder at $JOBDESK_CAREER_OPS_DIR."
+    say "      Delete it yourself if you no longer need your CV, tracker and PDFs."
+  fi
   if [ -x "$HOME/.local/bin/claude" ]; then
     say "Kept: Claude Code ($HOME/.local/bin/claude) — it's a separate app from Anthropic."
   fi
@@ -467,6 +586,9 @@ main() {
     stop) [ "${1:-}" = "--quiet" ] && QUIET=1; cmd_stop ;;
     restart) cmd_stop >/dev/null; cmd_start ;;
     status) [ "${1:-}" = "--quiet" ] && QUIET=1; cmd_status ;;
+    # For JobDesk.app's periodic check: is the server process there? No HTTP,
+    # so a busy server is never mistaken for a stopped one.
+    alive) running_pid >/dev/null ;;
     login) cmd_login ;;
     update|repair) cmd_update "$@" ;;
     doctor) cmd_doctor ;;

@@ -75,6 +75,7 @@ JOBDESK_CAREER_OPS_VERSION="${E2E_OLD_CAREER_OPS:-}" \
 [ -f "$HOME/career-ops/VERSION" ] || fail "career-ops wasn't downloaded"
 [ -f "$HOME/.jobdesk/ui/current/web/.next/BUILD_ID" ] || fail "web UI wasn't built"
 [ -z "$(git -C "$HOME/career-ops" status --porcelain)" ] || fail "the installer modified the career-ops checkout"
+[ ! -e "$HOME/.career-ops.jobdesk-partial" ] || fail "a partial download was left behind"
 [ "$(config_value JOBDESK_AI)" = none ] || fail "config: AI"
 FIRST_VERSION=$(awk 'NR==1 {print $1}' "$HOME/career-ops/VERSION")
 if [ -n "${E2E_OLD_CAREER_OPS:-}" ]; then
@@ -107,6 +108,8 @@ if [ "$(uname -s)" = Darwin ]; then
     # The app polls every 30s and quits once the server is gone.
     wait_for 90 sh -c "! pgrep -f '$APP/Contents/MacOS/' >/dev/null" || fail "the app kept running after the server stopped"
     printf 'app quit on its own\n'
+    # An applet that saved state into itself on quit would break its signature.
+    codesign --verify --deep --strict "$APP" || fail "JobDesk.app's signature broke after it ran"
   else
     printf '::warning::open(1) could not launch apps on this runner; skipped the app launch check\n'
   fi

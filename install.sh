@@ -4,14 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/martialstudios/jobdesk/main/install.sh | bash
 #
 # Run the same line again any time to update or repair. Your CV, tracker,
-# reports and PDFs are never touched. Options go after `bash -s --`:
-#
-#   --ai=claude|codex|gemini|none   AI helper to set up (default: ask; Claude)
-#   --dir=PATH                      your career-ops folder (default: ~/career-ops)
-#   --port=N                        local port for the web UI (default: 4788)
-#   --yes                           don't ask questions; use the defaults
-#   --no-launch                     don't open JobDesk at the end
-#   --update                        what `jobdesk update` runs
+# reports and PDFs are never touched. See usage() below for the options.
 #
 # What goes where: career-ops (with your data) in ~/career-ops; a private
 # Node.js, the built web UI, logs and settings in ~/.jobdesk; JobDesk.app in
@@ -32,6 +25,11 @@ CAREER_OPS_GIT="${JOBDESK_CAREER_OPS_GIT:-https://github.com/career-ops-hq/caree
 DEFAULT_PORT=4788
 APP_BUNDLE_ID=com.martialstudios.jobdesk
 NEED_KB=$(( 3 * 1024 * 1024 ))
+# The only things JobDesk creates in JOBDESK_HOME; uninstall removes exactly these.
+HOME_MARKER=".jobdesk-home"
+
+# A git that can't reach a repo must fail, not wait for a password prompt.
+export GIT_TERMINAL_PROMPT=0
 
 OPT_AI=""
 OPT_DIR=""
@@ -56,6 +54,7 @@ AI_BIN=""
 AI_NEW=0
 APP_PATH=""
 WAS_RUNNING=0
+FINISHED=0
 FIRST_INSTALL=0
 FRESH_CAREER_OPS=0
 EXISTING_DIR=""
@@ -63,6 +62,25 @@ EXISTING_PORT=""
 EXISTING_AI=""
 EXISTING_APP=""
 ORIG_PATH="$PATH"
+
+usage() {
+  cat <<EOF
+JobDesk installer: career-ops and its web UI on your Mac.
+
+  curl -fsSL https://raw.githubusercontent.com/$JOBDESK_REPO/main/install.sh | bash
+
+Options (after "bash -s --" when piping):
+  --ai=claude|codex|gemini|none   AI helper to set up (default: ask; Claude)
+  --dir=PATH                      your career-ops folder (default: ~/career-ops)
+  --port=N                        local port for the web UI (default: $DEFAULT_PORT)
+  --yes                           don't ask questions; use the defaults
+  --no-launch                     don't open JobDesk at the end
+  --update                        what "jobdesk update" runs
+
+Run it again any time to update or repair; your data is never touched.
+More: https://github.com/$JOBDESK_REPO
+EOF
+}
 
 # ── output ────────────────────────────────────────────────────────────────
 
@@ -170,6 +188,12 @@ version_ge() {
   return 0
 }
 
+# A usable local port: digits only, no leading zero, 1024-65000.
+valid_port() {
+  case "$1" in ''|*[!0-9]*|0*|??????*) return 1 ;; esac
+  [ "$1" -ge 1024 ] && [ "$1" -le 65000 ]
+}
+
 sha256_of() {
   if command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$1" | awk '{print $1}'
@@ -179,6 +203,12 @@ sha256_of() {
 }
 
 core_version_of() { awk 'NR==1 {print $1}' "$1/VERSION" 2>/dev/null; }
+
+# is_inside CHILD PARENT: CHILD is PARENT or somewhere below it.
+is_inside() {
+  case "${1%/}/" in "${2%/}/"*) return 0 ;; esac
+  return 1
+}
 
 find_cli() {
   local d
@@ -208,18 +238,63 @@ run_with_timeout() {
   wait "$pid"
 }
 
+# Start time of a process, so a PID the system has since reused isn't
+# mistaken for the process that wrote a lock.
+proc_start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/  */ /g; s/^ //; s/ $//'; }
+
+# Every process descended from $1.
+descendants_of() {
+  local table queue next p child found=""
+  table=$(ps -A -o pid=,ppid= 2>/dev/null) || return 0
+  queue="$1"
+  while [ -n "$queue" ]; do
+    next=""
+    for p in $queue; do
+      for child in $(printf '%s\n' "$table" | awk -v pp="$p" '$2 == pp {print $1}'); do
+        found="$found $child"
+        next="$next $child"
+      done
+    done
+    queue="$next"
+  done
+  printf '%s' "$found"
+}
+
+lock_holder_alive() {
+  local pid start
+  pid=$(sed -n 1p "$1/pid" 2>/dev/null)
+  start=$(sed -n 2p "$1/pid" 2>/dev/null)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 1
+  [ -z "$start" ] || [ "$(proc_start "$pid")" = "$start" ]
+}
+
+# Background steps ignore Ctrl-C (no job control), and closing Terminal only
+# reaches us, so stop a step still running, with everything it started.
+kill_step() {
+  local p
+  [ -n "$CURRENT_PID" ] || return 0
+  for p in $(descendants_of "$CURRENT_PID") "$CURRENT_PID"; do
+    kill -TERM "$p" 2>/dev/null
+  done
+  CURRENT_PID=""
+}
+
 cleanup() {
-  # Background steps ignore Ctrl-C (no job control), so stop one still running.
-  if [ -n "$CURRENT_PID" ] && kill -0 "$CURRENT_PID" 2>/dev/null; then
-    kill -TERM "$CURRENT_PID" 2>/dev/null
-  fi
+  kill_step
   [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"
   release_lock
+  # A failed update shouldn't leave JobDesk stopped: bring the previous version back.
+  if [ "$WAS_RUNNING" = 1 ] && [ "$FINISHED" = 0 ] && [ -x "$JOBDESK_HOME/bin/jobdesk" ]; then
+    if "$JOBDESK_HOME/bin/jobdesk" start >/dev/null 2>&1; then
+      printf '  JobDesk is running again with the version you had before.\n' >&2
+    fi
+  fi
 }
 
 release_lock() {
   if [ -n "$LOCK_DIR" ] && [ -d "$LOCK_DIR" ]; then
-    if [ "$(cat "$LOCK_DIR/pid" 2>/dev/null)" = "$$" ]; then
+    if [ "$(sed -n 1p "$LOCK_DIR/pid" 2>/dev/null)" = "$$" ]; then
       rm -rf "$LOCK_DIR"
     fi
   fi
@@ -227,25 +302,21 @@ release_lock() {
 }
 
 acquire_lock() {
-  local lock="$JOBDESK_HOME/.install-lock" holder
+  local lock="$JOBDESK_HOME/.install-lock"
   if ! mkdir "$lock" 2>/dev/null; then
-    holder=$(cat "$lock/pid" 2>/dev/null)
-    if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
-      die "Another JobDesk install or update is already running (process $holder). Let it finish, then try again."
+    # A lock made a moment ago may not have its pid file yet.
+    [ -f "$lock/pid" ] || sleep 1
+    if lock_holder_alive "$lock"; then
+      die "Another JobDesk install or update is already running (process $(sed -n 1p "$lock/pid")). Let it finish, then try again."
     fi
     rm -rf "$lock"
     mkdir "$lock" 2>/dev/null || die "Couldn't create $lock."
   fi
-  printf '%s\n' "$$" > "$lock/pid"
+  { printf '%s\n' "$$"; proc_start "$$"; } > "$lock/pid"
   LOCK_DIR="$lock"
 }
 
 # ── steps ─────────────────────────────────────────────────────────────────
-
-usage() {
-  sed -n '2,20p' "${BASH_SOURCE[0]:-/dev/null}" 2>/dev/null | sed 's/^# \{0,1\}//'
-  printf 'See https://github.com/%s\n' "$JOBDESK_REPO"
-}
 
 parse_args() {
   local arg
@@ -268,13 +339,10 @@ parse_args() {
     ''|claude|codex|gemini|none) ;;
     *) printf 'Unknown --ai value: %s (use claude, codex, gemini or none)\n' "$OPT_AI" >&2; exit 2 ;;
   esac
-  case "$OPT_PORT" in
-    '') ;;
-    *[!0-9]*) printf 'The port must be a number.\n' >&2; exit 2 ;;
-    *) if [ "$OPT_PORT" -lt 1024 ] || [ "$OPT_PORT" -gt 65000 ]; then
-         printf 'Pick a port between 1024 and 65000.\n' >&2; exit 2
-       fi ;;
-  esac
+  if [ -n "$OPT_PORT" ] && ! valid_port "$OPT_PORT"; then
+    printf 'The port must be a whole number from 1024 to 65000.\n' >&2
+    exit 2
+  fi
 }
 
 detect_platform() {
@@ -302,9 +370,21 @@ detect_platform() {
   fi
 }
 
+# JobDesk's folder must be its own: uninstall deletes what's in it.
+prepare_home() {
+  case "${JOBDESK_HOME%/}" in
+    ''|/|"${HOME%/}") die "JOBDESK_HOME can't be $JOBDESK_HOME; use a folder of its own, like ~/.jobdesk." ;;
+  esac
+  if [ -d "$JOBDESK_HOME" ] && [ ! -f "$JOBDESK_HOME/$HOME_MARKER" ] && [ -n "$(ls -A "$JOBDESK_HOME" 2>/dev/null)" ]; then
+    die "$JOBDESK_HOME already has other files in it. Point JOBDESK_HOME at an empty or new folder."
+  fi
+  mkdir -p "$JOBDESK_HOME/logs" || die "Couldn't create $JOBDESK_HOME."
+  : > "$JOBDESK_HOME/$HOME_MARKER"
+}
+
 check_requirements() {
   local tool avail
-  for tool in curl tar awk sed grep; do
+  for tool in curl tar awk sed grep ps; do
     command -v "$tool" >/dev/null 2>&1 || die "The '$tool' command is missing on this computer."
   done
   avail=$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
@@ -328,6 +408,7 @@ load_existing_config() {
   EXISTING_AI=$( . "$cfg" >/dev/null 2>&1; printf '%s' "${JOBDESK_AI:-}")
   # shellcheck disable=SC1090
   EXISTING_APP=$( . "$cfg" >/dev/null 2>&1; printf '%s' "${JOBDESK_APP:-}")
+  valid_port "$EXISTING_PORT" || EXISTING_PORT=""
 }
 
 resolve_settings() {
@@ -340,11 +421,19 @@ resolve_settings() {
     *) dir="$PWD/$dir" ;;
   esac
   CAREER_OPS_DIR="${dir%/}"
+  [ -n "$CAREER_OPS_DIR" ] || CAREER_OPS_DIR=/
+  if is_inside "$CAREER_OPS_DIR" "$JOBDESK_HOME"; then
+    die "Keep your career-ops folder outside $JOBDESK_HOME (JobDesk's own folder, which uninstall removes). For example: --dir=$HOME/career-ops"
+  fi
+  if is_inside "$JOBDESK_HOME" "$CAREER_OPS_DIR"; then
+    die "$JOBDESK_HOME can't be inside your career-ops folder ($CAREER_OPS_DIR)."
+  fi
   PORT="${OPT_PORT:-${EXISTING_PORT:-$DEFAULT_PORT}}"
 }
 
-# Get this project's files: the checkout we're running from (tests, CI), or
-# the repo tarball for the same ref (`curl | bash` and `jobdesk update`).
+# Get this project's files: the git checkout we're running from (tests, CI),
+# or the repo tarball for the same ref (`curl | bash` and `jobdesk update`).
+# Files that merely sit next to a downloaded installer are never trusted.
 fetch_source() {
   local here=""
   if [ -n "${JOBDESK_SRC_DIR:-}" ]; then
@@ -353,7 +442,7 @@ fetch_source() {
     if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
       here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     fi
-    if [ -n "$here" ] && [ -f "$here/bin/jobdesk" ] && [ -f "$here/macos/JobDesk.applescript" ]; then
+    if [ -n "$here" ] && [ -e "$here/.git" ] && [ -f "$here/bin/jobdesk" ] && [ -f "$here/macos/JobDesk.applescript" ]; then
       SRC_DIR="$here"
     else
       mkdir -p "$WORK_DIR/src"
@@ -398,8 +487,8 @@ choose_ai() {
 
 confirm_plan() {
   [ "$OPT_UPDATE" = 1 ] && return 0
+  [ "$FIRST_INSTALL" = 1 ] || return 0
   can_prompt || return 0
-  [ -f "$JOBDESK_HOME/config.env" ] && return 0
   local ai_line=""
   case "$AI" in
     claude) ai_line="Claude Code (Anthropic's official installer), if it isn't installed yet" ;;
@@ -417,7 +506,7 @@ confirm_plan() {
 
 stop_running() {
   if [ -x "$JOBDESK_HOME/bin/jobdesk" ]; then
-    if "$JOBDESK_HOME/bin/jobdesk" status --quiet >/dev/null 2>&1; then
+    if "$JOBDESK_HOME/bin/jobdesk" alive >/dev/null 2>&1; then
       WAS_RUNNING=1
       info "Stopping JobDesk while it updates..."
       "$JOBDESK_HOME/bin/jobdesk" stop --quiet >/dev/null 2>&1 || true
@@ -499,7 +588,7 @@ ensure_node() {
     tar -xzf "$WORK_DIR/$name.tar.gz" -C "$runtime/$name.partial" --strip-components=1 ||
       die "Couldn't unpack Node.js."
     mv "$runtime/$name.partial" "$runtime/$name"
-    if [ -d "$JOBDESK_HOME/node" ] && [ ! -L "$JOBDESK_HOME/node" ]; then
+    if [ -e "$JOBDESK_HOME/node" ] && [ ! -L "$JOBDESK_HOME/node" ]; then
       rm -rf "$JOBDESK_HOME/node"
     fi
     ln -sfn "runtime/$name" "$JOBDESK_HOME/node"
@@ -528,8 +617,10 @@ latest_release_tag() {
     sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1
 }
 
+clone_career_ops() { git clone --quiet --depth=1 ${2:+--branch "$2"} "$CAREER_OPS_GIT" "$1"; }
+
 ensure_career_ops() {
-  local dir="$CAREER_OPS_DIR" version
+  local dir="$CAREER_OPS_DIR" parent partial version tag=""
   step "career-ops"
   if [ -d "$dir" ] && is_career_ops_dir "$dir"; then
     [ -d "$dir/.git" ] ||
@@ -538,29 +629,55 @@ ensure_career_ops() {
     update_career_ops "$dir"
     return 0
   fi
+  if [ -L "$dir" ]; then
+    die "$dir is a symbolic link. Pass the real folder with --dir=PATH."
+  fi
   if [ -e "$dir" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
     die "$dir already exists and isn't a career-ops folder. Move it aside, or choose another folder with --dir=PATH."
   fi
-  mkdir -p "$(dirname "$dir")"
+  parent=$(dirname "$dir")
+  mkdir -p "$parent" 2>/dev/null
+  if [ ! -d "$parent" ] || [ ! -w "$parent" ]; then
+    die "Can't create $dir: $parent isn't a folder you can write to."
+  fi
+  # Download next to the final folder and move it into place only once it's
+  # complete, so an interrupted download never looks like an install.
+  partial="$parent/.$(basename "$dir").jobdesk-partial"
+  rm -rf "$partial"
   # career-ops's documented install: a git clone of the latest release (what
   # its own `npx @santifer/career-ops init` does); dependencies come next.
   version="${JOBDESK_CAREER_OPS_VERSION:-}"
   [ -n "$version" ] || version=$(latest_release_tag)
   if [ -n "$version" ]; then
-    run_step "Downloading career-ops $version" \
-      git clone --quiet --depth=1 --branch "career-ops-v$version" "$CAREER_OPS_GIT" "$dir" ||
-      die "Couldn't download career-ops from GitHub. Check your internet connection and try again."
+    tag="career-ops-v$version"
   else
     warn "Couldn't list career-ops releases; downloading its main branch instead."
-    run_step "Downloading career-ops" git clone --quiet --depth=1 "$CAREER_OPS_GIT" "$dir" ||
-      die "Couldn't download career-ops from GitHub. Check your internet connection and try again."
   fi
-  is_career_ops_dir "$dir" || die "The career-ops download in $dir looks incomplete. Delete that folder and try again."
+  if ! run_step "Downloading career-ops${version:+ $version}" clone_career_ops "$partial" "$tag" ||
+     ! is_career_ops_dir "$partial"; then
+    rm -rf "$partial"
+    die "Couldn't download career-ops from GitHub (see the log). Check your internet connection and try again."
+  fi
+  if [ -d "$dir" ]; then
+    rmdir "$dir" || { rm -rf "$partial"; die "Couldn't replace the empty folder $dir."; }
+  fi
+  mv "$partial" "$dir" || { rm -rf "$partial"; die "Couldn't move career-ops into $dir."; }
   FRESH_CAREER_OPS=1
   ok "career-ops $(core_version_of "$dir") in $dir"
 }
 
-updater() { cd "$1" && node update-system.mjs "$2" "$3"; }
+# career-ops's updater records the update as a git commit; give it an
+# identity if this Mac has none, without changing anyone's git settings.
+updater() {
+  cd "$1" || return 1
+  if [ -z "$(git config user.email 2>/dev/null)" ] && [ -z "${EMAIL:-}" ]; then
+    GIT_AUTHOR_NAME="JobDesk updater" GIT_AUTHOR_EMAIL="jobdesk@localhost" \
+      GIT_COMMITTER_NAME="JobDesk updater" GIT_COMMITTER_EMAIL="jobdesk@localhost" \
+      node update-system.mjs "$2" "$3"
+  else
+    node update-system.mjs "$2" "$3"
+  fi
+}
 
 update_career_ops() {
   local dir="$1" out
@@ -594,16 +711,25 @@ install_core_deps() {
 # JobDesk runs its own copy of career-ops's web/ folder, taken from the same
 # release as your career-ops, and points it at your folder (CAREER_OPS_ROOT).
 # career-ops's updater doesn't update web/, and this way the web UI is never
-# built inside, or mixed into, the folder that holds your data.
-ui_source_tag() {
-  local v="$1" t
+# built inside, or mixed into, the folder that holds your data. Your checkout
+# is only ever read; a release it doesn't have locally is fetched into a
+# throwaway repository instead.
+resolve_ui_source() {
+  local v="$1" t scratch="$WORK_DIR/career-ops-src.git"
+  UI_REPO=""
+  UI_TAG=""
   for t in "career-ops-v$v" "v$v"; do
     if git -C "$CAREER_OPS_DIR" rev-parse -q --verify "refs/tags/$t^{commit}" >/dev/null 2>&1; then
-      printf '%s' "$t"
+      UI_REPO="$CAREER_OPS_DIR"
+      UI_TAG="$t"
       return 0
     fi
-    if git -C "$CAREER_OPS_DIR" fetch -q --depth=1 origin tag "$t" >> "$LOG_FILE" 2>&1; then
-      printf '%s' "$t"
+  done
+  git init -q --bare "$scratch" >> "$LOG_FILE" 2>&1 || return 1
+  for t in "career-ops-v$v" "v$v"; do
+    if git -C "$scratch" fetch -q --depth=1 "$CAREER_OPS_GIT" "refs/tags/$t:refs/tags/$t" >> "$LOG_FILE" 2>&1; then
+      UI_REPO="$scratch"
+      UI_TAG="$t"
       return 0
     fi
   done
@@ -612,28 +738,32 @@ ui_source_tag() {
 
 build_ui() { cd "$1/web" && npm ci --no-audit --no-fund && npm run build; }
 
+ui_ready() {
+  [ -f "$1/web/.next/BUILD_ID" ] && [ -f "$1/web/node_modules/next/dist/bin/next" ]
+}
+
 ensure_ui() {
-  local ui="$JOBDESK_HOME/ui" v tag stamp dir d
+  local ui="$JOBDESK_HOME/ui" v stamp dir d
   step "career-ops web UI"
   v=$(core_version_of "$CAREER_OPS_DIR")
-  if tag=$(ui_source_tag "$v"); then
-    stamp="$tag node=$(node --version)"
+  if resolve_ui_source "$v"; then
+    stamp="$UI_TAG node=$(node --version)"
   else
-    tag=""
     stamp="worktree-$(git -C "$CAREER_OPS_DIR" rev-parse HEAD 2>/dev/null) node=$(node --version)"
   fi
-  if [ -f "$ui/current/.jobdesk-built" ] && [ "$(cat "$ui/current/.jobdesk-built")" = "$stamp" ] &&
-     [ -f "$ui/current/web/.next/BUILD_ID" ]; then
+  if [ -L "$ui/current" ] && [ -f "$ui/current/.jobdesk-built" ] &&
+     [ "$(cat "$ui/current/.jobdesk-built")" = "$stamp" ] && ui_ready "$ui/current"; then
     ok "The web UI for career-ops $v is ready"
     return 0
   fi
 
   dir="$ui/build-$(date +%Y%m%d%H%M%S)"
+  rm -rf "$dir"
   mkdir -p "$dir"
-  if [ -n "$tag" ]; then
-    git -C "$CAREER_OPS_DIR" archive --format=tar "$tag" web | tar -xf - -C "$dir" ||
-      { rm -rf "$dir"; die "Couldn't unpack the web UI from career-ops $tag."; }
-    git -C "$CAREER_OPS_DIR" show "$tag:VERSION" > "$dir/VERSION" 2>/dev/null ||
+  if [ -n "$UI_TAG" ]; then
+    git -C "$UI_REPO" archive --format=tar "$UI_TAG" web | tar -xf - -C "$dir" ||
+      { rm -rf "$dir"; die "Couldn't unpack the web UI from career-ops $UI_TAG."; }
+    git -C "$UI_REPO" show "$UI_TAG:VERSION" > "$dir/VERSION" 2>/dev/null ||
       cp "$CAREER_OPS_DIR/VERSION" "$dir/VERSION"
   else
     warn "No release tag found for career-ops $v; using the web UI from your folder as-is."
@@ -646,13 +776,20 @@ ensure_ui() {
 
   if ! run_step "Installing and building the web UI" build_ui "$dir"; then
     rm -rf "$dir"
-    if [ -f "$ui/current/web/.next/BUILD_ID" ]; then
+    if [ -L "$ui/current" ] && ui_ready "$ui/current"; then
       die "The new web UI didn't build (see the log). Your previous version is still installed."
     fi
     die "The web UI didn't build (see the log)."
   fi
   printf '%s\n' "$stamp" > "$dir/.jobdesk-built"
+  # `current` must be a link; anything else there would swallow the new one.
+  if [ -e "$ui/current" ] && [ ! -L "$ui/current" ]; then
+    rm -rf "$ui/current"
+  fi
   ln -sfn "$(basename "$dir")" "$ui/current"
+  if [ ! -L "$ui/current" ] || ! ui_ready "$ui/current"; then
+    die "Couldn't switch to the new web UI."
+  fi
   for d in "$ui"/build-*; do
     [ "$d" = "$dir" ] || rm -rf "$d"
   done
@@ -661,8 +798,11 @@ ensure_ui() {
 
 npm_global() { npm install -g --prefix "$JOBDESK_HOME/tools" --no-audit --no-fund "$1"; }
 
+# The AI helper is optional (the web UI works without one), so a problem here
+# is a warning; `jobdesk update` tries again.
 ensure_ai() {
-  local installer="$WORK_DIR/claude-install.sh"
+  local installer="$WORK_DIR/claude-install.sh" pkg label
+  AI_BIN=""
   case "$AI" in
     none)
       step "AI helper"
@@ -675,24 +815,42 @@ ensure_ai() {
         ok "Claude Code is installed ($AI_BIN)"
         return 0
       fi
-      curl -fsSL --retry 3 -o "$installer" https://claude.ai/install.sh ||
-        die "Couldn't download Claude Code's installer from claude.ai."
-      run_step "Installing Claude Code (Anthropic's official installer)" bash "$installer" ||
-        die "Claude Code didn't install (see the log). You can install it yourself from https://claude.ai/code and run this again."
-      AI_BIN=$(find_cli claude) || die "Claude Code installed, but the claude command wasn't found."
+      AI_BIN=""
+      if ! curl -fsSL --retry 3 -o "$installer" https://claude.ai/install.sh; then
+        warn "Couldn't download Claude Code's installer from claude.ai. JobDesk works without it;"
+        info "install it later from https://claude.ai/code, or run: jobdesk update"
+        return 0
+      fi
+      if ! run_step "Installing Claude Code (Anthropic's official installer)" bash "$installer"; then
+        warn "Claude Code didn't install (see the log). Install it from https://claude.ai/code, or run: jobdesk update"
+        return 0
+      fi
+      if ! AI_BIN=$(find_cli claude); then
+        AI_BIN=""
+        warn "Claude Code installed, but the claude command wasn't found. Try: jobdesk update"
+        return 0
+      fi
       AI_NEW=1
       ok "Claude Code installed ($AI_BIN)"
       ;;
     codex|gemini)
-      local pkg=@openai/codex label="Codex CLI"
-      [ "$AI" = gemini ] && pkg=@google/gemini-cli && label="Gemini CLI"
+      pkg=@openai/codex
+      label="Codex CLI"
+      if [ "$AI" = gemini ]; then
+        pkg=@google/gemini-cli
+        label="Gemini CLI"
+      fi
       step "$label"
       if AI_BIN=$(find_cli "$AI") && [ "$AI_BIN" != "$JOBDESK_HOME/tools/bin/$AI" ]; then
         ok "$label is installed ($AI_BIN)"
         return 0
       fi
+      AI_BIN=""
       [ -x "$JOBDESK_HOME/tools/bin/$AI" ] || AI_NEW=1
-      run_step "Installing $label ($pkg)" npm_global "$pkg@latest" || die "$label didn't install (see the log)."
+      if ! run_step "Installing $label ($pkg)" npm_global "$pkg@latest"; then
+        warn "$label didn't install (see the log). JobDesk works without it; run 'jobdesk update' to retry."
+        return 0
+      fi
       AI_BIN="$JOBDESK_HOME/tools/bin/$AI"
       ok "$label ($AI_BIN)"
       ;;
@@ -709,7 +867,7 @@ claude_works() {
 }
 
 ai_login() {
-  [ "$AI" = none ] && return 0
+  [ -n "$AI_BIN" ] || return 0
   [ "$OPT_UPDATE" = 1 ] && return 0
   [ "$AI_NEW" = 1 ] || [ "$FRESH_CAREER_OPS" = 1 ] || return 0
   if [ "$AI" = claude ] && [ "$AI_NEW" = 0 ]; then
@@ -787,8 +945,19 @@ quit_app() {
   done
 }
 
+# place_app BUNDLE DIR: replace DIR/JobDesk.app with BUNDLE. Fails, leaving
+# BUNDLE where it is, when the old app can't be removed.
+place_app() {
+  local app="$2/JobDesk.app"
+  mkdir -p "$2" 2>/dev/null
+  [ -w "$2" ] || return 1
+  rm -rf "$app" 2>/dev/null
+  [ ! -e "$app" ] || return 1
+  mv "$1" "$app"
+}
+
 build_app() {
-  local apps app tmp_app script bin="$JOBDESK_HOME/bin/jobdesk" plist
+  local apps app tmp_app script bin="$JOBDESK_HOME/bin/jobdesk" plist old_dir=""
   [ "$PLATFORM" = darwin ] || return 0
   step "The JobDesk app"
   if ! command -v osacompile >/dev/null 2>&1; then
@@ -799,15 +968,14 @@ build_app() {
   case "$bin" in
     *'"'*|*'\'*|*'#'*|*'&'*) die "Your home folder's path has characters JobDesk.app can't handle: $bin" ;;
   esac
-  if [ -n "$EXISTING_APP" ] && [ -d "$(dirname "$EXISTING_APP")" ]; then
-    apps=$(dirname "$EXISTING_APP")
+  [ -n "$EXISTING_APP" ] && old_dir=$(dirname "$EXISTING_APP")
+  if [ -n "$old_dir" ] && [ -d "$old_dir" ] && [ -w "$old_dir" ]; then
+    apps="$old_dir"
   elif [ -w /Applications ]; then
     apps=/Applications
   else
     apps="$HOME/Applications"
-    mkdir -p "$apps"
   fi
-  app="$apps/JobDesk.app"
   script="$WORK_DIR/JobDesk.applescript"
   tmp_app="$WORK_DIR/JobDesk.app"
   sed "s#__JOBDESK_BIN__#$bin#" "$SRC_DIR/macos/JobDesk.applescript" > "$script"
@@ -829,8 +997,18 @@ build_app() {
     warn "Couldn't sign JobDesk.app; it should still open."
 
   quit_app
-  rm -rf "$app"
-  mv "$tmp_app" "$app" || die "Couldn't put JobDesk.app in $apps."
+  if ! place_app "$tmp_app" "$apps"; then
+    [ "$apps" = "$HOME/Applications" ] && die "Couldn't put JobDesk.app in $apps."
+    warn "Couldn't replace JobDesk.app in $apps; putting it in $HOME/Applications instead."
+    apps="$HOME/Applications"
+    place_app "$tmp_app" "$apps" || die "Couldn't put JobDesk.app in $apps."
+  fi
+  app="$apps/JobDesk.app"
+  # An older copy somewhere else would be a second, stale JobDesk.
+  if [ -n "$EXISTING_APP" ] && [ "$EXISTING_APP" != "$app" ] &&
+     [ "$(basename "$EXISTING_APP")" = JobDesk.app ] && [ -d "$EXISTING_APP" ]; then
+    rm -rf "$EXISTING_APP" 2>/dev/null || true
+  fi
   touch "$app"
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" >/dev/null 2>&1 || true
   APP_PATH="$app"
@@ -860,6 +1038,7 @@ check_chrome() {
 
 finish() {
   local jobdesk_cmd="jobdesk"
+  FINISHED=1
   case ":$ORIG_PATH:" in
     *":$HOME/.local/bin:"*) ;;
     *) jobdesk_cmd="$JOBDESK_HOME/bin/jobdesk" ;;
@@ -904,7 +1083,7 @@ main() {
   fi
 
   detect_platform
-  mkdir -p "$JOBDESK_HOME/logs" || die "Couldn't create $JOBDESK_HOME."
+  prepare_home
   LOG_FILE="$JOBDESK_HOME/logs/install.log"
   if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE" | tr -d ' ')" -gt 5242880 ]; then
     mv -f "$LOG_FILE" "$LOG_FILE.1"
