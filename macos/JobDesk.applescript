@@ -21,8 +21,8 @@ on openJobDesk()
 		do shell script quoted form of jobdeskBin & " open --from-app"
 	on error errText number errNum
 		if errNum is -128 then return
-		set reply to display dialog "JobDesk couldn't start." & return & return & errText buttons {"Show Log", "OK"} default button "OK" with title "JobDesk" with icon caution
-		if button returned of reply is "Show Log" then
+		set dialogResult to display dialog "JobDesk couldn't start." & return & return & errText buttons {"Show Log", "OK"} default button "OK" with title "JobDesk" with icon caution
+		if button returned of dialogResult is "Show Log" then
 			try
 				do shell script quoted form of jobdeskBin & " logs --reveal"
 			end try
