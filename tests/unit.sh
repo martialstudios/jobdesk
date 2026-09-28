@@ -77,14 +77,42 @@ printf 'bash %s\n' "$BASH_VERSION"
   ( JOBDESK_HOME="$HOME/.jobdesk"; OPT_DIR="$HOME/.jobdesk-other/co"; resolve_settings ) >/dev/null 2>&1
   expect_eq "a sibling with a common prefix is fine" "$?" 0
 
-  # prepare_home refuses $HOME and folders that already hold other files.
-  ( JOBDESK_HOME="$HOME"; prepare_home ) >/dev/null 2>&1
+  # Paths are normalized before any comparison.
+  expect_eq "normalize //, /. and trailing /" "$(normalize_path "$SCRATCH//a/./b/")" "$SCRATCH/a/b"
+  expect_eq "normalize ~/" "$(normalize_path "~/x")" "$HOME/x"
+  mkdir -p "$SCRATCH/dotdir"
+  expect_eq "normalize . inside a folder" "$(cd "$SCRATCH/dotdir" && normalize_path .)" "$SCRATCH/dotdir"
+  ( JOBDESK_HOME="$HOME/.jobdesk"; OPT_DIR="$HOME//.jobdesk/./career-ops"; resolve_settings ) >/dev/null 2>&1
+  expect_eq "odd spellings can't sneak career-ops into JOBDESK_HOME" "$?" 1
+
+  # check_home_location refuses $HOME and folders that hold other files...
+  ( JOBDESK_HOME="$HOME"; check_home_location ) >/dev/null 2>&1
   expect_eq "JOBDESK_HOME=\$HOME refused" "$?" 1
+  ( JOBDESK_HOME="$HOME/"; check_home_location ) >/dev/null 2>&1
+  expect_eq "JOBDESK_HOME=\$HOME/ refused" "$?" 1
   mkdir -p "$SCRATCH/busy" && : > "$SCRATCH/busy/notes.txt"
-  ( JOBDESK_HOME="$SCRATCH/busy"; prepare_home ) >/dev/null 2>&1
+  ( JOBDESK_HOME="$SCRATCH/busy"; check_home_location ) >/dev/null 2>&1
   expect_eq "non-empty foreign folder refused" "$?" 1
+  # ...but not Finder's .DS_Store, or an install from before the marker.
+  mkdir -p "$SCRATCH/finder" && : > "$SCRATCH/finder/.DS_Store"
+  ( JOBDESK_HOME="$SCRATCH/finder"; check_home_location ) >/dev/null 2>&1
+  expect_eq "a folder with only .DS_Store is fine" "$?" 0
+  mkdir -p "$SCRATCH/legacy/bin" && : > "$SCRATCH/legacy/bin/jobdesk" && : > "$SCRATCH/legacy/config.env"
+  ( JOBDESK_HOME="$SCRATCH/legacy"; check_home_location ) >/dev/null 2>&1
+  expect_eq "an unmarked older install is adopted" "$?" 0
   ( JOBDESK_HOME="$SCRATCH/fresh-home"; prepare_home && [ -f "$SCRATCH/fresh-home/.jobdesk-home" ] ) >/dev/null 2>&1
   expect_eq "new JOBDESK_HOME gets its marker" "$?" 0
+
+  # A refused layout leaves nothing behind (it used to create the folder first).
+  ( JOBDESK_ALLOW_ROOT=1 JOBDESK_HOME="$SCRATCH/n4/co/.jd" "$BASH" "$ROOT/install.sh" --yes --no-launch --dir="$SCRATCH/n4/co" ) >/dev/null 2>&1
+  expect_eq "JOBDESK_HOME inside career-ops refused by the installer" "$?" 1
+  expect_false "refusal created nothing" test -e "$SCRATCH/n4"
+
+  # Start times don't depend on the time zone or language.
+  a=$(TZ=Asia/Tokyo proc_start $$)
+  b=$(exec 2>/dev/null; TZ=UTC LC_ALL=de_DE.UTF-8 LANG=de_DE.UTF-8 proc_start $$)
+  expect_eq "proc_start is TZ/locale independent" "$a" "$b"
+  case "$a" in ''|*[!\ -~]*) fail "proc_start format: [$a]" ;; *) pass ;; esac
 
   # latest_release_tag sorts versions numerically and ignores other tags.
   mkdir -p "$SCRATCH/fakebin"
@@ -141,6 +169,11 @@ EOF
   { printf '%s\n' "$other"; proc_start "$other"; } > "$JOBDESK_HOME/.install-lock/pid"
   ( acquire_lock ) >/dev/null 2>&1
   expect_eq "live lock holder respected" "$?" 1
+  # An old one-line lock (no start time) is stale even if its PID is alive.
+  rm -rf "$JOBDESK_HOME/.install-lock" && mkdir -p "$JOBDESK_HOME/.install-lock"
+  printf '%s\n' "$other" > "$JOBDESK_HOME/.install-lock/pid"
+  ( acquire_lock ) >/dev/null 2>&1
+  expect_eq "one-line lock is stale" "$?" 0
   kill "$other" 2>/dev/null
   wait "$other" 2>/dev/null
 
@@ -219,6 +252,10 @@ EOF
   expect_eq "running_pid with a matching start time" "$(running_pid)" "$fake"
   printf '%s\nMon Jan  1 00:00:00 2001\n' "$fake" > "$PID_FILE"
   expect_false "running_pid rejects a reused PID" running_pid
+  printf '%s\n' "$fake" > "$PID_FILE"
+  expect_false "running_pid rejects a PID file without a start time" running_pid
+  write_pid_file "$PID_FILE" "$fake"
+  expect_eq "...and accepts it again with the right start time" "$(TZ=Pacific/Auckland running_pid)" "$fake"
   kill "$fake" 2>/dev/null
   wait "$fake" 2>/dev/null
   printf '999999\n' > "$PID_FILE"
@@ -276,6 +313,7 @@ EOF
   expect_eq "uninstall exit" "$?" 0
   expect_false "JobDesk's own files removed" test -e "$u/home/.jobdesk/bin"
   expect_eq "unrelated file in JobDesk's folder kept" "$(cat "$u/home/.jobdesk/notes.txt" 2>/dev/null)" "my notes"
+  expect_true "folder stays marked, so reinstalling works" test -f "$u/home/.jobdesk/.jobdesk-home"
   expect_eq "career-ops data kept" "$(cat "$u/home/career-ops/cv.md" 2>/dev/null)" "MY CV"
 
   # ...refuses when career-ops lives inside JobDesk's folder...

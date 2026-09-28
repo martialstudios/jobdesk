@@ -107,11 +107,15 @@ healthy() {
 }
 
 # Start time of a process. Stored next to every PID we keep, so a number the
-# system has since reused for something else never counts as ours.
-proc_start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/  */ /g; s/^ //; s/ $//'; }
+# system has since reused for something else never counts as ours. Fixed
+# locale and time zone: ps formats lstart in local time and language, which
+# differ between Terminal and the app, and change when you travel.
+proc_start() { LC_ALL=C TZ=UTC0 ps -o lstart= -p "$1" 2>/dev/null | sed 's/  */ /g; s/^ //; s/ $//'; }
 
-# write_pid_file FILE PID
-write_pid_file() { { printf '%s\n' "$2"; proc_start "$2"; } > "$1"; }
+# write_pid_file FILE PID: renamed into place so a reader never sees half a file.
+write_pid_file() {
+  { printf '%s\n' "$2"; proc_start "$2"; } > "$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"
+}
 
 # pid_file_alive FILE: the process recorded in FILE is still the same process.
 pid_file_alive() {
@@ -119,8 +123,9 @@ pid_file_alive() {
   pid=$(sed -n 1p "$1" 2>/dev/null)
   start=$(sed -n 2p "$1" 2>/dev/null)
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -n "$start" ] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  [ -z "$start" ] || [ "$(proc_start "$pid")" = "$start" ]
+  [ "$(proc_start "$pid")" = "$start" ]
 }
 
 # Only trust a PID file that still points at the Next.js server we started.
@@ -537,13 +542,15 @@ cmd_uninstall() {
   if [ -L "$link" ]; then
     case "$(readlink "$link")" in "$JOBDESK_HOME"/*) rm -f "$link" ;; esac
   fi
-  for entry in bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock; do
+  for entry in bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock .DS_Store; do
     rm -rf "${JOBDESK_HOME:?}/$entry"
   done
   rm -f "$JOBDESK_HOME/$HOME_MARKER"
   if rmdir "$JOBDESK_HOME" 2>/dev/null; then
     say "Removed $JOBDESK_HOME (JobDesk's private Node.js, web UI build and logs)."
   else
+    # Keep marking the folder as JobDesk's, so installing again still works.
+    : > "$JOBDESK_HOME/$HOME_MARKER"
     say "Removed JobDesk's files from $JOBDESK_HOME; other files in that folder were left alone."
   fi
   say ""

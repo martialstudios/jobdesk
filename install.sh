@@ -119,8 +119,12 @@ run_step() {
   shift
   log "run: $*"
   start=$(date +%s)
+  # Its own process group: closing Terminal or Ctrl-C reaches only the
+  # installer, whose cleanup then stops the whole step (npm and all).
+  set -m
   "$@" < /dev/null >> "$LOG_FILE" 2>&1 &
   pid=$!
+  set +m
   CURRENT_PID=$pid
   if [ -t 1 ]; then
     while kill -0 "$pid" 2>/dev/null; do
@@ -240,7 +244,15 @@ run_with_timeout() {
 
 # Start time of a process, so a PID the system has since reused isn't
 # mistaken for the process that wrote a lock.
-proc_start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/  */ /g; s/^ //; s/ $//'; }
+# Fixed locale and time zone: ps formats lstart in local time and language,
+# which differ between Terminal and the app, and change when you travel.
+proc_start() { LC_ALL=C TZ=UTC0 ps -o lstart= -p "$1" 2>/dev/null | sed 's/  */ /g; s/^ //; s/ $//'; }
+
+# write_pid_file FILE PID: pid, then its start time; renamed into place so a
+# reader never sees half a file.
+write_pid_file() {
+  { printf '%s\n' "$2"; proc_start "$2"; } > "$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"
+}
 
 # Every process descended from $1.
 descendants_of() {
@@ -265,18 +277,33 @@ lock_holder_alive() {
   pid=$(sed -n 1p "$1/pid" 2>/dev/null)
   start=$(sed -n 2p "$1/pid" 2>/dev/null)
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -n "$start" ] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
-  [ -z "$start" ] || [ "$(proc_start "$pid")" = "$start" ]
+  [ "$(proc_start "$pid")" = "$start" ]
 }
 
-# Background steps ignore Ctrl-C (no job control), and closing Terminal only
-# reaches us, so stop a step still running, with everything it started.
+# Stop a step still running when the installer exits early, with everything
+# it started: its process group, plus any descendant that left the group.
 kill_step() {
-  local p
+  local p procs alive="" i=0
   [ -n "$CURRENT_PID" ] || return 0
-  for p in $(descendants_of "$CURRENT_PID") "$CURRENT_PID"; do
-    kill -TERM "$p" 2>/dev/null
+  procs="$CURRENT_PID $(descendants_of "$CURRENT_PID")"
+  kill -TERM -- "-$CURRENT_PID" 2>/dev/null
+  for p in $procs; do kill -TERM "$p" 2>/dev/null; done
+  # npm shuts down slowly on a signal; don't leave it running behind us.
+  while [ $i -lt 6 ]; do
+    alive=""
+    for p in $procs; do
+      kill -0 "$p" 2>/dev/null && alive="$alive $p"
+    done
+    [ -z "$alive" ] && break
+    sleep 0.5
+    i=$(( i + 1 ))
   done
+  if [ -n "$alive" ]; then
+    kill -KILL -- "-$CURRENT_PID" 2>/dev/null
+    for p in $alive; do kill -KILL "$p" 2>/dev/null; done
+  fi
   CURRENT_PID=""
 }
 
@@ -312,7 +339,7 @@ acquire_lock() {
     rm -rf "$lock"
     mkdir "$lock" 2>/dev/null || die "Couldn't create $lock."
   fi
-  { printf '%s\n' "$$"; proc_start "$$"; } > "$lock/pid"
+  write_pid_file "$lock/pid" "$$" || die "Couldn't write $lock/pid."
   LOCK_DIR="$lock"
 }
 
@@ -370,14 +397,51 @@ detect_platform() {
   fi
 }
 
-# JobDesk's folder must be its own: uninstall deletes what's in it.
-prepare_home() {
-  case "${JOBDESK_HOME%/}" in
-    ''|/|"${HOME%/}") die "JOBDESK_HOME can't be $JOBDESK_HOME; use a folder of its own, like ~/.jobdesk." ;;
+# normalize_path PATH: absolute, no "//", no "/." segments or trailing "/".
+normalize_path() {
+  local p="$1"
+  # shellcheck disable=SC2088  # matching a literal "~/" as typed
+  case "$p" in
+    "~") p="$HOME" ;;
+    "~/"*) p="$HOME/${p#\~/}" ;;
+    /*) ;;
+    *) p="$PWD/$p" ;;
   esac
-  if [ -d "$JOBDESK_HOME" ] && [ ! -f "$JOBDESK_HOME/$HOME_MARKER" ] && [ -n "$(ls -A "$JOBDESK_HOME" 2>/dev/null)" ]; then
+  p=$(printf '%s\n' "$p" | sed -e 's#//*#/#g' -e 's#/\./#/#g' -e 's#/\.$##' -e 's#/$##')
+  if [ -d "$p" ]; then
+    p=$(cd "$p" 2>/dev/null && pwd) || true
+  fi
+  printf '%s' "${p:-/}"
+}
+
+# Does JOBDESK_HOME hold anything besides JobDesk's own files (and Finder's)?
+home_is_foreign() {
+  local entry
+  [ -d "$JOBDESK_HOME" ] || return 1
+  [ -f "$JOBDESK_HOME/$HOME_MARKER" ] && return 1
+  # An install from before the marker existed.
+  [ -f "$JOBDESK_HOME/bin/jobdesk" ] && [ -f "$JOBDESK_HOME/config.env" ] && return 1
+  for entry in "$JOBDESK_HOME"/* "$JOBDESK_HOME"/.[!.]* "$JOBDESK_HOME"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    [ "$(basename "$entry")" = .DS_Store ] && continue
+    return 0
+  done
+  return 1
+}
+
+# JobDesk's folder must be its own: uninstall deletes what JobDesk put there.
+# Checked before anything is created.
+check_home_location() {
+  JOBDESK_HOME=$(normalize_path "$JOBDESK_HOME")
+  case "$JOBDESK_HOME" in
+    /|"$(normalize_path "$HOME")") die "JOBDESK_HOME can't be $JOBDESK_HOME; use a folder of its own, like ~/.jobdesk." ;;
+  esac
+  if home_is_foreign; then
     die "$JOBDESK_HOME already has other files in it. Point JOBDESK_HOME at an empty or new folder."
   fi
+}
+
+prepare_home() {
   mkdir -p "$JOBDESK_HOME/logs" || die "Couldn't create $JOBDESK_HOME."
   : > "$JOBDESK_HOME/$HOME_MARKER"
 }
@@ -412,16 +476,7 @@ load_existing_config() {
 }
 
 resolve_settings() {
-  local dir="${OPT_DIR:-${EXISTING_DIR:-$HOME/career-ops}}"
-  # shellcheck disable=SC2088  # matching a literal "~/" typed in --dir
-  case "$dir" in
-    "~") dir="$HOME" ;;
-    "~/"*) dir="$HOME/${dir#\~/}" ;;
-    /*) ;;
-    *) dir="$PWD/$dir" ;;
-  esac
-  CAREER_OPS_DIR="${dir%/}"
-  [ -n "$CAREER_OPS_DIR" ] || CAREER_OPS_DIR=/
+  CAREER_OPS_DIR=$(normalize_path "${OPT_DIR:-${EXISTING_DIR:-$HOME/career-ops}}")
   if is_inside "$CAREER_OPS_DIR" "$JOBDESK_HOME"; then
     die "Keep your career-ops folder outside $JOBDESK_HOME (JobDesk's own folder, which uninstall removes). For example: --dir=$HOME/career-ops"
   fi
@@ -505,8 +560,16 @@ confirm_plan() {
 }
 
 stop_running() {
-  if [ -x "$JOBDESK_HOME/bin/jobdesk" ]; then
-    if "$JOBDESK_HOME/bin/jobdesk" alive >/dev/null 2>&1; then
+  local j="$JOBDESK_HOME/bin/jobdesk" rc
+  if [ -x "$j" ]; then
+    "$j" alive >/dev/null 2>&1
+    rc=$?
+    # An older jobdesk has no `alive` (usage error, exit 2): ask `status`.
+    if [ "$rc" = 2 ]; then
+      "$j" status --quiet >/dev/null 2>&1
+      rc=$?
+    fi
+    if [ "$rc" = 0 ]; then
       WAS_RUNNING=1
       info "Stopping JobDesk while it updates..."
       "$JOBDESK_HOME/bin/jobdesk" stop --quiet >/dev/null 2>&1 || true
@@ -1004,10 +1067,17 @@ build_app() {
     place_app "$tmp_app" "$apps" || die "Couldn't put JobDesk.app in $apps."
   fi
   app="$apps/JobDesk.app"
-  # An older copy somewhere else would be a second, stale JobDesk.
+  # An older copy somewhere else would be a second JobDesk in the Dock. Only
+  # remove it when we can remove it completely; a half-deleted app is worse
+  # than a second working one (both open the same JobDesk).
   if [ -n "$EXISTING_APP" ] && [ "$EXISTING_APP" != "$app" ] &&
      [ "$(basename "$EXISTING_APP")" = JobDesk.app ] && [ -d "$EXISTING_APP" ]; then
-    rm -rf "$EXISTING_APP" 2>/dev/null || true
+    if [ -w "$(dirname "$EXISTING_APP")" ]; then
+      rm -rf "$EXISTING_APP" 2>/dev/null || true
+    else
+      warn "An older JobDesk.app is still in $(dirname "$EXISTING_APP") (no permission to remove it)."
+      info "It opens the same JobDesk; delete it yourself if you like."
+    fi
   fi
   touch "$app"
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" >/dev/null 2>&1 || true
@@ -1083,6 +1153,9 @@ main() {
   fi
 
   detect_platform
+  check_home_location
+  load_existing_config
+  resolve_settings
   prepare_home
   LOG_FILE="$JOBDESK_HOME/logs/install.log"
   if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE" | tr -d ' ')" -gt 5242880 ]; then
@@ -1094,8 +1167,6 @@ main() {
   acquire_lock
 
   check_requirements
-  load_existing_config
-  resolve_settings
   fetch_source
   choose_ai
   confirm_plan
