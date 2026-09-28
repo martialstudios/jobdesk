@@ -75,7 +75,9 @@ JOBDESK_CAREER_OPS_VERSION="${E2E_OLD_CAREER_OPS:-}" \
 [ -f "$HOME/career-ops/VERSION" ] || fail "career-ops wasn't downloaded"
 [ -f "$HOME/.jobdesk/ui/current/web/.next/BUILD_ID" ] || fail "web UI wasn't built"
 [ -z "$(git -C "$HOME/career-ops" status --porcelain)" ] || fail "the installer modified the career-ops checkout"
-[ ! -e "$HOME/.career-ops.jobdesk-partial" ] || fail "a partial download was left behind"
+for leftover in "$HOME"/.career-ops.jobdesk-partial.*; do
+  [ -e "$leftover" ] && fail "a partial download was left behind: $leftover"
+done
 [ "$(config_value JOBDESK_AI)" = none ] || fail "config: AI"
 FIRST_VERSION=$(awk 'NR==1 {print $1}' "$HOME/career-ops/VERSION")
 if [ -n "${E2E_OLD_CAREER_OPS:-}" ]; then

@@ -42,7 +42,7 @@ LOG_FILE=""
 WORK_DIR=""
 CURRENT_PID=""
 CLAUDE_CHECK_OUTPUT=""
-LOCK_DIR=""
+LOCK_PATH=""
 SRC_DIR=""
 JOBDESK_VERSION=""
 PLATFORM=""
@@ -126,6 +126,7 @@ run_step() {
   pid=$!
   set +m
   CURRENT_PID=$pid
+  mkdir -p "$JOBDESK_HOME/run" && ln -sfn "$(lock_value "$pid")" "$JOBDESK_HOME/run/install-step"
   if [ -t 1 ]; then
     while kill -0 "$pid" 2>/dev/null; do
       now=$(( $(date +%s) - start ))
@@ -135,6 +136,7 @@ run_step() {
   fi
   if wait "$pid"; then rc=0; else rc=$?; fi
   CURRENT_PID=""
+  rm -f "$JOBDESK_HOME/run/install-step"
   now=$(( $(date +%s) - start ))
   if [ "$rc" -eq 0 ]; then
     printf '\r    %s✓%s %s %s(%ds)%s%s\n' "$GREEN" "$RESET" "$what" "$DIM" "$now" "$RESET" "$CLEAR_EOL"
@@ -248,10 +250,31 @@ run_with_timeout() {
 # which differ between Terminal and the app, and change when you travel.
 proc_start() { LC_ALL=C TZ=UTC0 ps -o lstart= -p "$1" 2>/dev/null | sed 's/  */ /g; s/^ //; s/ $//'; }
 
-# write_pid_file FILE PID: pid, then its start time; renamed into place so a
-# reader never sees half a file.
-write_pid_file() {
-  { printf '%s\n' "$2"; proc_start "$2"; } > "$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"
+# Locks are symlinks whose target is "pid|start time": created in a single
+# atomic step, so nobody ever sees a lock without its owner.
+lock_value() { printf '%s|%s' "$1" "$(proc_start "$1")"; }
+
+lock_owner_alive() {
+  local v pid start
+  v=$(readlink "$1" 2>/dev/null) || return 1
+  pid="${v%%|*}"
+  start="${v#*|}"
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  if [ -z "$start" ] || [ "$start" = "$v" ]; then
+    return 1
+  fi
+  kill -0 "$pid" 2>/dev/null || return 1
+  [ "$(proc_start "$pid")" = "$start" ]
+}
+
+# remove_stale_lock PATH: remove it only if it still holds the dead owner we
+# looked at, never a lock someone else just took.
+remove_stale_lock() {
+  local seen
+  seen=$(readlink "$1" 2>/dev/null) || { rm -rf "$1"; return 0; }
+  if [ "$(readlink "$1" 2>/dev/null)" = "$seen" ]; then
+    rm -f "$1"
+  fi
 }
 
 # Every process descended from $1.
@@ -270,16 +293,6 @@ descendants_of() {
     queue="$next"
   done
   printf '%s' "$found"
-}
-
-lock_holder_alive() {
-  local pid start
-  pid=$(sed -n 1p "$1/pid" 2>/dev/null)
-  start=$(sed -n 2p "$1/pid" 2>/dev/null)
-  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-  [ -n "$start" ] || return 1
-  kill -0 "$pid" 2>/dev/null || return 1
-  [ "$(proc_start "$pid")" = "$start" ]
 }
 
 # Stop a step still running when the installer exits early, with everything
@@ -320,27 +333,47 @@ cleanup() {
 }
 
 release_lock() {
-  if [ -n "$LOCK_DIR" ] && [ -d "$LOCK_DIR" ]; then
-    if [ "$(sed -n 1p "$LOCK_DIR/pid" 2>/dev/null)" = "$$" ]; then
-      rm -rf "$LOCK_DIR"
-    fi
+  if [ -n "$LOCK_PATH" ]; then
+    case "$(readlink "$LOCK_PATH" 2>/dev/null)" in
+      "$$|"*) rm -f "$LOCK_PATH" ;;
+    esac
   fi
-  LOCK_DIR=""
+  LOCK_PATH=""
+}
+
+# A step of an installer that was killed outright (SIGKILL skips our cleanup)
+# can still be running: stop it before starting over.
+stop_orphaned_step() {
+  local v pid start
+  v=$(readlink "$JOBDESK_HOME/run/install-step" 2>/dev/null) || return 0
+  pid="${v%%|*}"
+  start="${v#*|}"
+  case "$pid" in ''|*[!0-9]*) ;; *)
+    if kill -0 "$pid" 2>/dev/null && [ "$(proc_start "$pid")" = "$start" ]; then
+      kill -TERM -- "-$pid" 2>/dev/null
+      sleep 2
+      kill -KILL -- "-$pid" 2>/dev/null
+    fi ;;
+  esac
+  rm -f "$JOBDESK_HOME/run/install-step"
 }
 
 acquire_lock() {
   local lock="$JOBDESK_HOME/.install-lock"
-  if ! mkdir "$lock" 2>/dev/null; then
-    # A lock made a moment ago may not have its pid file yet.
-    [ -f "$lock/pid" ] || sleep 1
-    if lock_holder_alive "$lock"; then
-      die "Another JobDesk install or update is already running (process $(sed -n 1p "$lock/pid")). Let it finish, then try again."
-    fi
+  # A lock folder from an earlier JobDesk is always stale.
+  if [ -d "$lock" ] && [ ! -L "$lock" ]; then
     rm -rf "$lock"
-    mkdir "$lock" 2>/dev/null || die "Couldn't create $lock."
   fi
-  write_pid_file "$lock/pid" "$$" || die "Couldn't write $lock/pid."
-  LOCK_DIR="$lock"
+  if ! ln -s "$(lock_value $$)" "$lock" 2>/dev/null; then
+    if lock_owner_alive "$lock"; then
+      die "Another JobDesk install or update is already running (process $(readlink "$lock" | cut -d'|' -f1)). Let it finish, then try again."
+    fi
+    stop_orphaned_step
+    remove_stale_lock "$lock"
+    ln -s "$(lock_value $$)" "$lock" 2>/dev/null ||
+      die "Another JobDesk install or update just started. Let it finish, then try again."
+  fi
+  LOCK_PATH="$lock"
 }
 
 # ── steps ─────────────────────────────────────────────────────────────────
@@ -397,9 +430,11 @@ detect_platform() {
   fi
 }
 
-# normalize_path PATH: absolute, no "//", no "/." segments or trailing "/".
+# normalize_path PATH: an absolute, physical path. Symlinks are resolved in
+# the part that exists; "..", "." and "//" are resolved in the part that
+# doesn't. Every folder comparison relies on this.
 normalize_path() {
-  local p="$1"
+  local p="$1" head tail="" part rest out
   # shellcheck disable=SC2088  # matching a literal "~/" as typed
   case "$p" in
     "~") p="$HOME" ;;
@@ -407,11 +442,23 @@ normalize_path() {
     /*) ;;
     *) p="$PWD/$p" ;;
   esac
-  p=$(printf '%s\n' "$p" | sed -e 's#//*#/#g' -e 's#/\./#/#g' -e 's#/\.$##' -e 's#/$##')
-  if [ -d "$p" ]; then
-    p=$(cd "$p" 2>/dev/null && pwd) || true
-  fi
-  printf '%s' "${p:-/}"
+  head="$p"
+  while [ ! -d "$head" ]; do
+    tail="$(basename "$head")${tail:+/$tail}"
+    head=$(dirname "$head")
+  done
+  out=$(cd -P "$head" 2>/dev/null && pwd -P) || out=/
+  rest="$tail"
+  while [ -n "$rest" ]; do
+    part="${rest%%/*}"
+    if [ "$part" = "$rest" ]; then rest=""; else rest="${rest#*/}"; fi
+    case "$part" in
+      ''|.) ;;
+      ..) out=$(dirname "$out") ;;
+      *) out="${out%/}/$part" ;;
+    esac
+  done
+  printf '%s' "${out:-/}"
 }
 
 # Does JOBDESK_HOME hold anything besides JobDesk's own files (and Finder's)?
@@ -477,6 +524,7 @@ load_existing_config() {
 
 resolve_settings() {
   CAREER_OPS_DIR=$(normalize_path "${OPT_DIR:-${EXISTING_DIR:-$HOME/career-ops}}")
+  JOBDESK_HOME=$(normalize_path "$JOBDESK_HOME")
   if is_inside "$CAREER_OPS_DIR" "$JOBDESK_HOME"; then
     die "Keep your career-ops folder outside $JOBDESK_HOME (JobDesk's own folder, which uninstall removes). For example: --dir=$HOME/career-ops"
   fi
@@ -705,8 +753,9 @@ ensure_career_ops() {
   fi
   # Download next to the final folder and move it into place only once it's
   # complete, so an interrupted download never looks like an install.
-  partial="$parent/.$(basename "$dir").jobdesk-partial"
-  rm -rf "$partial"
+  # Unique per run; leftovers from interrupted runs go first.
+  rm -rf "$parent/.$(basename "$dir").jobdesk-partial".*
+  partial="$parent/.$(basename "$dir").jobdesk-partial.$$"
   # career-ops's documented install: a git clone of the latest release (what
   # its own `npx @santifer/career-ops init` does); dependencies come next.
   version="${JOBDESK_CAREER_OPS_VERSION:-}"

@@ -30,6 +30,9 @@ printf 'bash %s\n' "$BASH_VERSION"
   # shellcheck source=../install.sh
   JOBDESK_SOURCE_ONLY=1 . "$ROOT/install.sh"
   setup_colors
+  # Paths come back physical (on macOS, /var and /tmp are symlinks).
+  SP=$(cd -P "$SCRATCH" && pwd -P)
+  HP=$(cd -P "$HOME" && pwd -P)
 
   expect_true "14.6.1 >= 13.5" version_ge 14.6.1 13.5
   expect_true "13.5 >= 13.5" version_ge 13.5 13.5
@@ -60,11 +63,11 @@ printf 'bash %s\n' "$BASH_VERSION"
   case "$out" in *--dir=PATH*--port=N*) pass ;; *) fail "--help lists the options" ;; esac
 
   # resolve_settings: default, ~, relative, trailing slash, remembered folder.
-  ( OPT_DIR=""; EXISTING_DIR=""; resolve_settings; [ "$CAREER_OPS_DIR" = "$HOME/career-ops" ] && [ "$PORT" = 4788 ] )
+  ( OPT_DIR=""; EXISTING_DIR=""; resolve_settings; [ "$CAREER_OPS_DIR" = "$HP/career-ops" ] && [ "$PORT" = 4788 ] )
   expect_eq "default folder and port" "$?" 0
-  ( OPT_DIR="~/jobs/co/"; resolve_settings; [ "$CAREER_OPS_DIR" = "$HOME/jobs/co" ] )
+  ( OPT_DIR="~/jobs/co/"; resolve_settings; [ "$CAREER_OPS_DIR" = "$HP/jobs/co" ] )
   expect_eq "~ expansion + trailing slash" "$?" 0
-  ( cd "$SCRATCH" && OPT_DIR="rel dir"; resolve_settings; [ "$CAREER_OPS_DIR" = "$SCRATCH/rel dir" ] )
+  ( cd "$SCRATCH" && OPT_DIR="rel dir"; resolve_settings; [ "$CAREER_OPS_DIR" = "$SP/rel dir" ] )
   expect_eq "relative folder" "$?" 0
   ( OPT_DIR=""; EXISTING_DIR="/data/co"; EXISTING_PORT=4999; resolve_settings;
     [ "$CAREER_OPS_DIR" = /data/co ] && [ "$PORT" = 4999 ] )
@@ -78,12 +81,22 @@ printf 'bash %s\n' "$BASH_VERSION"
   expect_eq "a sibling with a common prefix is fine" "$?" 0
 
   # Paths are normalized before any comparison.
-  expect_eq "normalize //, /. and trailing /" "$(normalize_path "$SCRATCH//a/./b/")" "$SCRATCH/a/b"
-  expect_eq "normalize ~/" "$(normalize_path "~/x")" "$HOME/x"
+  expect_eq "normalize //, /. and trailing /" "$(normalize_path "$SCRATCH//a/./b/")" "$SP/a/b"
+  expect_eq "normalize ~/" "$(normalize_path "~/x")" "$HP/x"
   mkdir -p "$SCRATCH/dotdir"
-  expect_eq "normalize . inside a folder" "$(cd "$SCRATCH/dotdir" && normalize_path .)" "$SCRATCH/dotdir"
+  expect_eq "normalize . inside a folder" "$(cd "$SCRATCH/dotdir" && normalize_path .)" "$SP/dotdir"
+  expect_eq "normalize .. through a missing folder" "$(normalize_path "$SCRATCH/typo/../x/./y")" "$SP/x/y"
+  expect_eq "normalize a relative path with .." "$(cd "$SCRATCH/dotdir" && normalize_path ../z)" "$SP/z"
+  mkdir -p "$HOME/.jobdesk"
+  ln -s "$HOME/.jobdesk" "$HOME/jdlink"
+  expect_eq "normalize through a symlink" "$(normalize_path "$HOME/jdlink/tools")" "$HP/.jobdesk/tools"
   ( JOBDESK_HOME="$HOME/.jobdesk"; OPT_DIR="$HOME//.jobdesk/./career-ops"; resolve_settings ) >/dev/null 2>&1
   expect_eq "odd spellings can't sneak career-ops into JOBDESK_HOME" "$?" 1
+  ( JOBDESK_HOME="$HOME/.jobdesk"; OPT_DIR="~/typo/../.jobdesk/tools"; resolve_settings ) >/dev/null 2>&1
+  expect_eq "neither can .. through a missing folder" "$?" 1
+  ( JOBDESK_HOME="$HOME/.jobdesk"; OPT_DIR="~/jdlink/tools"; resolve_settings ) >/dev/null 2>&1
+  expect_eq "nor a symlink into JOBDESK_HOME" "$?" 1
+  rm -rf "$HOME/jdlink" "$HOME/.jobdesk"
 
   # check_home_location refuses $HOME and folders that hold other files...
   ( JOBDESK_HOME="$HOME"; check_home_location ) >/dev/null 2>&1
@@ -152,28 +165,26 @@ EOF
   expect_false "other folder rejected" is_career_ops_dir "$SCRATCH/notco"
   expect_eq "core version parsed" "$(core_version_of "$SCRATCH/co")" 1.34.0
 
-  # A stale install lock whose PID now belongs to another process is taken over...
+  # Install locks are symlinks "pid|start time". A stale one whose PID now
+  # belongs to another process is taken over...
   JOBDESK_HOME="$SCRATCH/lockhome"
-  mkdir -p "$JOBDESK_HOME/.install-lock"
+  mkdir -p "$JOBDESK_HOME"
   sleep 60 &
   other=$!
-  printf '%s\nMon Jan  1 00:00:00 2001\n' "$other" > "$JOBDESK_HOME/.install-lock/pid"
-  ( acquire_lock && [ "$(sed -n 1p "$JOBDESK_HOME/.install-lock/pid")" = "$$" ] ) >/dev/null 2>&1
+  ln -s "$other|Mon Jan  1 00:00:00 2001" "$JOBDESK_HOME/.install-lock"
+  ( acquire_lock && case "$(readlink "$JOBDESK_HOME/.install-lock")" in "$$|"*) exit 0 ;; esac; exit 1 ) >/dev/null 2>&1
   expect_eq "stale lock with a reused PID is taken over" "$?" 0
-  kill "$other" 2>/dev/null
-  wait "$other" 2>/dev/null
-  # ...but a live holder is respected.
-  rm -rf "$JOBDESK_HOME/.install-lock" && mkdir -p "$JOBDESK_HOME/.install-lock"
-  sleep 60 &
-  other=$!
-  { printf '%s\n' "$other"; proc_start "$other"; } > "$JOBDESK_HOME/.install-lock/pid"
+  # ...but a live holder is respected...
+  rm -f "$JOBDESK_HOME/.install-lock"
+  ln -s "$(lock_value "$other")" "$JOBDESK_HOME/.install-lock"
   ( acquire_lock ) >/dev/null 2>&1
   expect_eq "live lock holder respected" "$?" 1
-  # An old one-line lock (no start time) is stale even if its PID is alive.
-  rm -rf "$JOBDESK_HOME/.install-lock" && mkdir -p "$JOBDESK_HOME/.install-lock"
-  printf '%s\n' "$other" > "$JOBDESK_HOME/.install-lock/pid"
-  ( acquire_lock ) >/dev/null 2>&1
-  expect_eq "one-line lock is stale" "$?" 0
+  expect_eq "...and its lock left alone" "$(readlink "$JOBDESK_HOME/.install-lock")" "$(lock_value "$other")"
+  # ...and a lock folder from an earlier JobDesk is stale.
+  rm -f "$JOBDESK_HOME/.install-lock"
+  mkdir -p "$JOBDESK_HOME/.install-lock" && printf '%s\n' "$other" > "$JOBDESK_HOME/.install-lock/pid"
+  ( acquire_lock && [ -L "$JOBDESK_HOME/.install-lock" ] ) >/dev/null 2>&1
+  expect_eq "old lock folder replaced" "$?" 0
   kill "$other" 2>/dev/null
   wait "$other" 2>/dev/null
 
@@ -279,6 +290,13 @@ EOF
   expect_false "server stopped" kill -0 "$server" 2>/dev/null
   expect_false "detached child stopped too" kill -0 "$child" 2>/dev/null
 
+  # A stale start lock (dead owner) doesn't hold up `start`.
+  mkdir -p "$RUN_DIR"
+  ln -s "999999|Mon Jan  1 00:00:00 2001" "$START_LOCK"
+  ( acquire_start_lock && case "$(readlink "$START_LOCK")" in "$$|"*) exit 0 ;; esac; exit 1 ) >/dev/null 2>&1
+  expect_eq "stale start lock replaced" "$?" 0
+  rm -f "$START_LOCK"
+
   expect_true "valid config port" valid_port 4788
   expect_false "config port with a leading zero" valid_port 08080
 
@@ -326,6 +344,23 @@ EOF
   HOME="$v/home" "$BASH" "$v/home/.jobdesk/bin/jobdesk" uninstall --yes >/dev/null 2>&1
   expect_eq "uninstall refuses with data inside" "$?" 1
   expect_eq "data inside JobDesk's folder kept" "$(cat "$v/home/.jobdesk/career-ops/cv.md" 2>/dev/null)" "MY CV"
+
+  # ...refuses when a symlink hides career-ops inside JobDesk's folder...
+  y="$SCRATCH/uninst4"
+  mkdir -p "$y/home/.jobdesk/bin" "$y/home/.jobdesk/tools"
+  cp "$ROOT/bin/jobdesk" "$y/home/.jobdesk/bin/jobdesk"
+  : > "$y/home/.jobdesk/.jobdesk-home"
+  printf 'MY CV\n' > "$y/home/.jobdesk/tools/cv.md"
+  ln -s "$y/home/.jobdesk" "$y/home/jdlink"
+  printf 'JOBDESK_CAREER_OPS_DIR=%s\n' "$y/home/jdlink/tools" > "$y/home/.jobdesk/config.env"
+  HOME="$y/home" "$BASH" "$y/home/.jobdesk/bin/jobdesk" uninstall --yes >/dev/null 2>&1
+  expect_eq "uninstall refuses a symlinked nesting" "$?" 1
+  expect_eq "symlinked data kept" "$(cat "$y/home/.jobdesk/tools/cv.md" 2>/dev/null)" "MY CV"
+  # ...refuses when any of its folders holds what looks like career-ops data...
+  printf 'JOBDESK_CAREER_OPS_DIR=%s\n' "$y/home/elsewhere" > "$y/home/.jobdesk/config.env"
+  HOME="$y/home" "$BASH" "$y/home/.jobdesk/bin/jobdesk" uninstall --yes >/dev/null 2>&1
+  expect_eq "uninstall refuses to delete a folder with a cv.md" "$?" 1
+  expect_eq "that cv.md kept" "$(cat "$y/home/.jobdesk/tools/cv.md" 2>/dev/null)" "MY CV"
 
   # ...and refuses without the install marker.
   w="$SCRATCH/uninst3"

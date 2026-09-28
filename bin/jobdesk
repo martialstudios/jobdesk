@@ -117,6 +117,33 @@ write_pid_file() {
   { printf '%s\n' "$2"; proc_start "$2"; } > "$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"
 }
 
+# Locks are symlinks whose target is "pid|start time": created in a single
+# atomic step, so nobody ever sees a lock without its owner.
+lock_value() { printf '%s|%s' "$1" "$(proc_start "$1")"; }
+
+lock_owner_alive() {
+  local v pid start
+  v=$(readlink "$1" 2>/dev/null) || return 1
+  pid="${v%%|*}"
+  start="${v#*|}"
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  if [ -z "$start" ] || [ "$start" = "$v" ]; then
+    return 1
+  fi
+  kill -0 "$pid" 2>/dev/null || return 1
+  [ "$(proc_start "$pid")" = "$start" ]
+}
+
+# remove_stale_lock PATH: remove it only if it still holds the dead owner we
+# looked at, never a lock someone else just took.
+remove_stale_lock() {
+  local seen
+  seen=$(readlink "$1" 2>/dev/null) || { rm -rf "$1"; return 0; }
+  if [ "$(readlink "$1" 2>/dev/null)" = "$seen" ]; then
+    rm -f "$1"
+  fi
+}
+
 # pid_file_alive FILE: the process recorded in FILE is still the same process.
 pid_file_alive() {
   local pid start
@@ -211,35 +238,34 @@ rotate_log() {
 }
 
 # An installer run holds this lock while it swaps Node.js or the web UI.
-installing() { pid_file_alive "$INSTALL_LOCK/pid"; }
+installing() { lock_owner_alive "$INSTALL_LOCK"; }
 
 # One `start` at a time, or two could each launch a server.
 acquire_start_lock() {
-  local i=0
+  local waited=0 cleared=0
   mkdir -p "$RUN_DIR"
-  while ! mkdir "$START_LOCK" 2>/dev/null; do
-    if ! pid_file_alive "$START_LOCK/pid"; then
-      # A lock made a moment ago may not have its pid file yet.
-      if [ ! -f "$START_LOCK/pid" ] && [ $i -lt 2 ]; then
-        sleep 1
-        i=$(( i + 1 ))
-        continue
-      fi
-      rm -rf "$START_LOCK"
-      continue
+  # A lock folder from an earlier JobDesk is always stale.
+  if [ -d "$START_LOCK" ] && [ ! -L "$START_LOCK" ]; then
+    rm -rf "$START_LOCK"
+  fi
+  while ! ln -s "$(lock_value $$)" "$START_LOCK" 2>/dev/null; do
+    if lock_owner_alive "$START_LOCK"; then
+      [ $waited -lt 120 ] || die "Another 'jobdesk start' is taking too long. Try again in a minute."
+      sleep 1
+      waited=$(( waited + 1 ))
+    else
+      [ $cleared -lt 5 ] || die "Couldn't create $START_LOCK."
+      remove_stale_lock "$START_LOCK"
+      cleared=$(( cleared + 1 ))
     fi
-    [ $i -lt 120 ] || die "Another 'jobdesk start' is taking too long. Try again in a minute."
-    sleep 1
-    i=$(( i + 1 ))
   done
-  write_pid_file "$START_LOCK/pid" $$
   HAVE_START_LOCK=1
   trap release_start_lock EXIT
 }
 
 release_start_lock() {
   if [ "$HAVE_START_LOCK" = 1 ]; then
-    rm -rf "$START_LOCK"
+    rm -f "$START_LOCK"
     HAVE_START_LOCK=0
   fi
 }
@@ -441,7 +467,7 @@ cmd_doctor() {
       doctor_fail "Google Chrome not found (the Apply feature fills forms in Chrome: https://www.google.com/chrome/)"
     fi
   fi
-  if [ -d "$INSTALL_LOCK" ]; then
+  if [ -e "$INSTALL_LOCK" ] || [ -L "$INSTALL_LOCK" ]; then
     if installing; then
       say "  - an install or update is running right now"
     else
@@ -506,18 +532,38 @@ cmd_update() {
   return $rc
 }
 
+# Physical path of an existing folder (symlinks resolved), or nothing.
+physical() { (cd -P "$1" 2>/dev/null && pwd -P); }
+
+# The entries JobDesk creates in its folder: uninstall removes these and
+# nothing else.
+OWNED_ENTRIES="bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock .DS_Store"
+
 # Removes only what JobDesk put in its folder, never the folder wholesale:
 # whatever else lives there (by mistake or not) stays.
 cmd_uninstall() {
-  local answer=y link pid entry
-  case "${JOBDESK_HOME%/}" in
-    ''|/|"${HOME%/}") die "Refusing to uninstall from $JOBDESK_HOME." ;;
+  local answer=y link pid entry home_phys co_phys found
+  home_phys=$(physical "$JOBDESK_HOME")
+  case "$home_phys" in
+    ''|/|"$(physical "$HOME")") die "Refusing to uninstall from $JOBDESK_HOME." ;;
   esac
   [ -f "$JOBDESK_HOME/$HOME_MARKER" ] || die "$JOBDESK_HOME doesn't look like a JobDesk install; nothing removed."
-  case "${JOBDESK_CAREER_OPS_DIR%/}/" in
-    "${JOBDESK_HOME%/}/"*)
-      die "Your career-ops folder ($JOBDESK_CAREER_OPS_DIR) is inside $JOBDESK_HOME. Move it somewhere else first, then uninstall." ;;
-  esac
+  # Compare real locations, so no symlink or ".." can hide career-ops in here.
+  co_phys=$(physical "$JOBDESK_CAREER_OPS_DIR")
+  if [ -n "$co_phys" ]; then
+    case "$co_phys/" in
+      "$home_phys/"*)
+        die "Your career-ops folder ($JOBDESK_CAREER_OPS_DIR) is inside $JOBDESK_HOME. Move it somewhere else first, then uninstall." ;;
+    esac
+  fi
+  # And never delete anything that looks like someone's career-ops data.
+  for entry in $OWNED_ENTRIES; do
+    [ -d "$JOBDESK_HOME/$entry" ] || continue
+    found=$(find "$JOBDESK_HOME/$entry" -maxdepth 3 \( -name cv.md -o -path '*/data/applications.md' \) 2>/dev/null | head -n 1)
+    if [ -n "$found" ]; then
+      die "$found looks like career-ops data, so nothing was removed. Move it out of $JOBDESK_HOME first."
+    fi
+  done
   installing && die "JobDesk is being installed or updated right now. Try again when that finishes."
   if [ "${1:-}" != "--yes" ]; then
     [ -t 0 ] || die "Run 'jobdesk uninstall' in the Terminal app (or add --yes)."
@@ -542,7 +588,7 @@ cmd_uninstall() {
   if [ -L "$link" ]; then
     case "$(readlink "$link")" in "$JOBDESK_HOME"/*) rm -f "$link" ;; esac
   fi
-  for entry in bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock .DS_Store; do
+  for entry in $OWNED_ENTRIES; do
     rm -rf "${JOBDESK_HOME:?}/$entry"
   done
   rm -f "$JOBDESK_HOME/$HOME_MARKER"
