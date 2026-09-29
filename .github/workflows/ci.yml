@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: shellcheck
-        run: shellcheck -s bash install.sh bin/jobdesk tests/*.sh
+        run: shellcheck -x -s bash install.sh bin/jobdesk tests/*.sh macos/dmg-setup.sh macos/dmg/launch macos/shims/git tools/build-dmg.sh
       - name: unit tests
         run: bash tests/unit.sh
 
@@ -52,3 +52,16 @@ jobs:
       - uses: actions/checkout@v5
       - name: install 1.33.0, then update
         run: /bin/bash tests/e2e.sh
+
+  dmg:
+    name: JobDesk.dmg, built and set up (macOS)
+    needs: lint
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: the applet compiles
+        run: osacompile -s -o "$RUNNER_TEMP/JobDesk.app" macos/JobDeskDMG.applescript
+      # Builds a test DMG (fake key, throwaway home), then sets it up and runs it.
+      - name: build, set up, run, uninstall
+        run: /bin/bash tests/dmg-e2e.sh

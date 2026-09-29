@@ -15,6 +15,14 @@ application form for you to review, and tracks every application.
 
 ## ⏱️ Status (read first)
 
+- **0.2.0 adds the DMG edition** (2026-09-28; see "The DMG edition" below).
+  - `tests/dmg-e2e.sh` passes on an Apple Silicon Mac for both halves, arm64
+    and x64 (the latter under Rosetta). The real app was also driven by hand:
+    progress window, browser opening, quit after `stop`, the "move to
+    Applications" dialog.
+  - Not yet done: a build with the owner's real key tried against Anthropic,
+    and an Intel Mac or the "Open Anyway" flow on a second Mac.
+
 - **Version 0.1.0 is code complete.** The first publish goes to the empty repo
   `martialstudios/jobdesk`, as a PR onto an empty root commit on `main`.
   - The owner has to create that repo. The Claude GitHub App gets
@@ -145,6 +153,75 @@ The career-ops web UI (Next.js, alpha) provides:
   Playwright's Chromium, which is installed via `npx playwright install
   chromium` and is non-fatal.
 
+## The DMG edition (0.2.0): no Terminal, no logins
+
+Asked for by the owner on 2026-09-28: a non-technical friend has to be able to
+open JobDesk and use it straight away, with no Terminal, no git or developer
+tools prompt, no downloads and no AI login. `tools/build-dmg.sh` builds
+`dist/JobDesk-<version>.dmg` on the owner's Mac.
+
+- **Claude access is the owner's Anthropic API key, not their Claude login.**
+  (Decided 2026-09-28; don't relitigate.)
+  - A Claude Pro/Max login is personal. Anthropic's terms don't allow sharing
+    it, and a token baked into a DMG could be pulled out and reused.
+  - An API key is the supported way to let others use Claude through your
+    account. The owner makes one just for JobDesk, with a Console spend limit,
+    and stores it in the Keychain (`jobdesk-anthropic-api-key`).
+  - The build reads it from there, never prints it, and writes it only into the
+    app's `payload/secrets.env`. Setup copies that to `~/.jobdesk/secrets.env`
+    (mode 600). `bin/jobdesk`'s `dmg_server_env` exports it to the server only.
+  - **The key is extractable from the DMG.** So the DMG is shared privately and
+    never published, CI builds use a fake key, and the key never enters the repo.
+- **No local model.** career-ops runs Claude Code as a file-editing agent. Models
+  that fit a typical 8–16 GB Mac are too weak for that, and they'd mean a
+  5–20 GB download.
+- **Unsigned, with a one-time "Open Anyway".** The owner chose not to buy an
+  Apple Developer ID ($99/yr) for now. The app is ad-hoc signed, so on first
+  open macOS blocks it until the user clicks Open Anyway in System Settings →
+  Privacy & Security. `assets/dmg/How to open JobDesk.png`
+  (`tools/make_dmg_guide.py`) walks them through it. With a Developer ID,
+  add signing and notarization to `build-dmg.sh` and the guide goes away.
+- **Universal, with everything pre-built.** The app's `Contents/Resources/payload/`
+  holds `common.tar.gz` (a career-ops release checkout with `node_modules`, plus
+  the built web UI) and `arm64.tar.gz` / `x64.tar.gz` (Node, the Claude Code
+  binary, Playwright's headless Chromium). Everything is checksum-verified at
+  build time.
+  - The web UI is built once, then `npm prune --omit=dev`, with the SWC
+    compiler and `.next/cache` removed. The other architecture's `sharp`
+    binaries are added with `npm pack`.
+  - A moved `.next` build runs fine (checked 2026-09-28).
+  - The Intel headless Chromium comes via
+    `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=mac15`.
+- **First open runs `macos/dmg-setup.sh`**, via the applet →
+  `Contents/Resources/launch setup-start`. It sources `install.sh`'s helpers
+  (locks, paths, `write_config`, `install_jobdesk_files`) and lays out the same
+  `~/.jobdesk` + `~/career-ops` as the Terminal install. It reports
+  `PERCENT|what` to a status file, which the applet shows in its progress window.
+  - It never replaces an existing career-ops folder.
+  - It strips quarantine from what it unpacked; the app itself was already
+    approved.
+  - It writes `.dmg-build`, so a newer DMG sets up again, keeping the user's data.
+- **git shim.** On a Mac without Apple's developer tools, `/usr/bin/git` pops up
+  their install dialog. career-ops's `/api/version`, its doctor (called by the
+  home page) and Claude Code all call git by name. So `~/.jobdesk/shims/git` is
+  first on the server's PATH. It runs a real git if there is one, and otherwise
+  answers "not installed" without a dialog.
+- **Claude Code settings live in `~/.jobdesk/claude`** (`CLAUDE_CONFIG_DIR`), with
+  `DISABLE_AUTOUPDATER=1`, so uninstall removes them and the bundled binary
+  never changes.
+- **In the DMG edition, `jobdesk update` and `login` only explain themselves.**
+  Updating means a newer DMG. `JOBDESK_EDITION=dmg` in `config.env` marks it.
+- **The applet refuses to run from the disk image** (`/Volumes/…`) or from a
+  translocated path, and asks the user to drag it to Applications first.
+- **Size:** about 500 MB DMG, about 550 MB app, about 1 GB unpacked for one
+  architecture. First-run setup takes about 15–30 s.
+- **Known limits:**
+  - A web UI error for a revoked, exhausted or wrong key reads "(no output — is
+    the CLI authenticated?)". The owner checks the Console.
+  - A newer DMG doesn't update an existing `~/career-ops`'s system files (that
+    needs git); only the web UI, Node and Claude Code move forward.
+  - The Apply feature still needs Google Chrome installed.
+
 ## Files
 
 | Path | What it is |
@@ -152,11 +229,18 @@ The career-ops web UI (Next.js, alpha) provides:
 | `install.sh` | Installer / updater / repairer. Everything is in functions, with `main "$@"` last. It ends with the marker `__JOBDESK_INSTALLER_END__`, and `jobdesk update` refuses a download without it. |
 | `bin/jobdesk` | Control script, installed to `~/.jobdesk/bin` and linked from `~/.local/bin`. Subcommands: `open`, `start`, `stop`, `restart`, `status`, `alive`, `login`, `update`, `doctor`, `logs`, `uninstall`, `version`. It finds its install from its own path. |
 | `macos/JobDesk.applescript` | Applet source. `__JOBDESK_BIN__` is replaced at install time. |
+| `macos/JobDeskDMG.applescript` | The DMG edition's applet: first-run setup with a progress window, then the same open/idle/quit behavior. |
+| `macos/dmg/launch` | Inside the DMG app (`Contents/Resources`): `where`, `needs-setup`, `setup-start`, `setup-status`, and passes everything else to `jobdesk`. A `test-home` file next to it (test builds only) redirects HOME. |
+| `macos/dmg-setup.sh` | The DMG edition's first-run setup (see above). `JOBDESK_DMG_ARCH=x64` sets up the Intel parts, for testing under Rosetta. |
+| `macos/shims/git` | The git shim. |
+| `tools/build-dmg.sh` | Builds `dist/JobDesk-<version>.dmg`. Flags: `--key-file`, `--no-key`, `--test-home`, `--career-ops`. |
+| `tools/make_dmg_guide.py`, `assets/dmg/` | The DMG's picture guide. |
+| `tests/dmg-e2e.sh` | Builds a test DMG (fake key, throwaway home), copies the app out, runs setup, starts, checks the web UI, the key and PDF browser, re-setup and uninstall. |
 | `assets/JobDesk.icns`, `.png` | Icon, rendered by `tools/make_icon.py` (Pillow). |
 | `assets/screenshots/*` | README images, taken from career-ops's own sample fixture. |
 | `tests/unit.sh` | Offline unit checks; `JOBDESK_SOURCE_ONLY=1` sources the scripts. |
 | `tests/e2e.sh` | Real install into a throwaway HOME: start, HTTP checks, re-run, uninstall. On macOS it also checks the app. `E2E_OLD_CAREER_OPS=1.33.0` adds an update test. |
-| `.github/workflows/ci.yml` | shellcheck + unit tests (ubuntu); unit + e2e on macOS and ubuntu (macOS under `/bin/bash` 3.2); update test on macOS. |
+| `.github/workflows/ci.yml` | shellcheck + unit tests (ubuntu); unit + e2e on macOS and ubuntu (macOS under `/bin/bash` 3.2); update test on macOS; the DMG build + DMG e2e on macOS. |
 
 **Settings on the user's Mac:** `~/.jobdesk/config.env`, which the installer
 writes with `printf %q` quoting.
@@ -170,9 +254,10 @@ writes with `printf %q` quoting.
 ## Testing
 
 ```bash
-shellcheck -s bash install.sh bin/jobdesk tests/*.sh   # pip install shellcheck-py if missing
+shellcheck -x -s bash install.sh bin/jobdesk tests/*.sh macos/dmg-setup.sh macos/dmg/launch macos/shims/git tools/build-dmg.sh
 bash tests/unit.sh                                     # offline, ~20 s
 JOBDESK_ALLOW_ROOT=1 bash tests/e2e.sh                 # network, ~50 s; root needs ALLOW_ROOT
+/bin/bash tests/dmg-e2e.sh                             # macOS + network, ~8 min (builds the DMG)
 ```
 
 - **Testing under bash 3.2 on Linux (optional):** the authoritative check is CI,

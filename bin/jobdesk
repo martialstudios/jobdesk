@@ -46,6 +46,10 @@ STOP_MARK="$RUN_DIR/stopping"   # the pid `stop` is taking down
 INSTALL_LOCK="$JOBDESK_HOME/.install-lock"
 UI_WEB="$JOBDESK_HOME/ui/current/web"
 NODE_BIN="$JOBDESK_HOME/node/bin/node"
+# Only the DMG edition has these (see macos/dmg-setup.sh).
+SECRETS_FILE="$JOBDESK_HOME/secrets.env"
+BROWSERS_DIR="$JOBDESK_HOME/browsers"
+SHIMS_DIR="$JOBDESK_HOME/shims"
 DEFAULT_PORT=4788
 # `start` exits with this when a `stop` took its server down mid-start, so the
 # app can quit quietly instead of reporting a failure.
@@ -56,6 +60,7 @@ JOBDESK_CAREER_OPS_DIR="$HOME/career-ops"
 JOBDESK_PORT=$DEFAULT_PORT
 JOBDESK_AI=claude
 JOBDESK_APP=""
+JOBDESK_EDITION=""   # "dmg": set up from JobDesk.dmg, which carries its own Claude key
 if [ -f "$CONFIG_FILE" ]; then
   # shellcheck source=/dev/null
   . "$CONFIG_FILE"
@@ -80,6 +85,9 @@ valid_port "$JOBDESK_PORT" || JOBDESK_PORT=$DEFAULT_PORT
 # PATH for the server and every AI CLI it launches. The app starts us with
 # launchd's bare PATH, so spell out every place a CLI is commonly installed.
 server_path() {
+  # shims/git keeps a Mac without Apple's developer tools from popping up
+  # their install dialog whenever career-ops or Claude Code asks for git.
+  [ -d "$SHIMS_DIR" ] && printf '%s:' "$SHIMS_DIR"
   printf '%s' "$JOBDESK_HOME/node/bin:$JOBDESK_HOME/tools/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 }
 
@@ -297,6 +305,24 @@ wait_healthy() {
   return 1
 }
 
+# The DMG edition's server env: the Claude key it came with (so nobody logs
+# in), the PDF browser it came with, and a Claude Code that keeps its settings
+# inside JobDesk's folder and never updates itself out from under JobDesk.
+dmg_server_env() {
+  if [ -f "$SECRETS_FILE" ]; then
+    # shellcheck source=/dev/null
+    . "$SECRETS_FILE"
+    [ -n "${ANTHROPIC_API_KEY:-}" ] && export ANTHROPIC_API_KEY
+    # A key that isn't scoped to a workspace has to name one on every request.
+    [ -n "${ANTHROPIC_CUSTOM_HEADERS:-}" ] && export ANTHROPIC_CUSTOM_HEADERS
+  fi
+  [ -d "$BROWSERS_DIR" ] && export PLAYWRIGHT_BROWSERS_PATH="$BROWSERS_DIR"
+  if [ "$JOBDESK_EDITION" = dmg ]; then
+    export CLAUDE_CONFIG_DIR="$JOBDESK_HOME/claude" DISABLE_AUTOUPDATER=1
+  fi
+  return 0
+}
+
 cmd_start() {
   local pid port attempt
   acquire_start_lock
@@ -330,6 +356,7 @@ cmd_start() {
       export PATH HOME
       export CAREER_OPS_ROOT="$JOBDESK_CAREER_OPS_DIR"
       export NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production
+      dmg_server_env
       exec nohup "$NODE_BIN" node_modules/next/dist/bin/next start -H 127.0.0.1 -p "$port" \
         >> "$SERVER_LOG" 2>&1 < /dev/null
     ) &
@@ -470,6 +497,10 @@ cmd_doctor() {
   doctor_check "career-ops $(core_version) at $JOBDESK_CAREER_OPS_DIR" test -f "$JOBDESK_CAREER_OPS_DIR/VERSION"
   doctor_check "career-ops folder is a git checkout (needed for safe updates)" test -d "$JOBDESK_CAREER_OPS_DIR/.git"
   doctor_check "web UI $(web_version) is built" ui_ready
+  if [ "$JOBDESK_EDITION" = dmg ]; then
+    doctor_check "the Claude key JobDesk came with" test -s "$SECRETS_FILE"
+    doctor_check "the PDF browser JobDesk came with" test -d "$BROWSERS_DIR"
+  fi
   if name=$(ai_bin_name); then
     if bin=$(ai_cli_path "$name"); then doctor_pass "AI helper: $bin"; else doctor_fail "AI helper '$name' not found (run: jobdesk update)"; fi
   else
@@ -505,6 +536,10 @@ cmd_doctor() {
 
 cmd_login() {
   local name bin path
+  if [ "$JOBDESK_EDITION" = dmg ]; then
+    say "Nothing to do: this JobDesk came with Claude already set up."
+    return 0
+  fi
   name=$(ai_bin_name) || die "No AI helper is set up. Run: jobdesk update --ai=claude"
   bin=$(ai_cli_path "$name") || die "$name isn't installed. Run: jobdesk update"
   [ -t 0 ] || die "Run 'jobdesk login' in the Terminal app."
@@ -528,6 +563,11 @@ cmd_login() {
 
 cmd_update() {
   local dir url rc tmp_root
+  if [ "$JOBDESK_EDITION" = dmg ]; then
+    say "This JobDesk came from JobDesk.dmg. To update it, open a newer JobDesk.dmg"
+    say "and drag JobDesk into Applications again. Your CV and tracker are kept."
+    return 0
+  fi
   # A private folder: nothing another user put in /tmp can ride along.
   # macOS's $TMPDIR ends in "/"; drop it so paths never carry "//".
   tmp_root=${TMPDIR:-/tmp}
@@ -554,7 +594,7 @@ physical() { (cd -P "$1" 2>/dev/null && pwd -P); }
 
 # The entries JobDesk creates in its folder: uninstall removes these and
 # nothing else.
-OWNED_ENTRIES="bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock .DS_Store"
+OWNED_ENTRIES="bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock .DS_Store browsers shims claude secrets.env .secrets.env.new .dmg-build"
 
 # Removes only what JobDesk put in its folder, never the folder wholesale:
 # whatever else lives there (by mistake or not) stays.

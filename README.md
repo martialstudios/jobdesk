@@ -103,6 +103,47 @@ Send them this page. Each person installs JobDesk on their own Mac and uses thei
 own AI account, so nothing is shared between you: not your CV, not your tracker,
 and not your AI usage.
 
+### Or: a JobDesk.dmg with no Terminal and no logins
+
+For someone who shouldn't have to touch Terminal, you can build a `JobDesk.dmg`
+on your Mac that has everything inside it: career-ops, its web UI (already
+built), Node.js, Claude Code and the PDF browser, for Apple Silicon and Intel
+Macs. It also carries **your** Anthropic API key, so they never log in to
+anything. Their use is billed to your Anthropic Console account.
+
+1. At [console.anthropic.com](https://console.anthropic.com), create an API key
+   just for JobDesk. Under Billing → Limits, set a monthly spend limit you're
+   comfortable with.
+2. Store the key in your Mac's Keychain. Terminal asks for it and shows nothing
+   as you paste:
+
+   ```bash
+   security add-generic-password -a "$USER" -s jobdesk-anthropic-api-key -w
+   ```
+
+3. Build (about 5 minutes; the result is about 500 MB):
+
+   ```bash
+   tools/build-dmg.sh
+   ```
+
+   It lands in `dist/JobDesk-<version>.dmg`.
+4. Give them the DMG and tell them to open **How to open JobDesk.png** inside it.
+   The steps: drag JobDesk into Applications and open it. The first time, macOS
+   blocks it because it isn't signed with an Apple Developer ID. They click
+   **Open Anyway** once, in System Settings → Privacy & Security. JobDesk then
+   sets itself up in about a minute and opens in their browser.
+
+Keep in mind:
+
+- **Anyone with the DMG can dig the key out of it.** Share it privately (AirDrop,
+  a USB stick, a private link), never publicly. If it leaks, delete the key in
+  the Console and build a new DMG with a new key.
+- Their CV and tracker stay on their Mac. Only what they ask Claude to do goes
+  to Anthropic, on your key.
+- To update them, build a newer DMG and have them drag the new JobDesk into
+  Applications again. Their data is kept.
+
 ## Uninstalling
 
 Run `jobdesk uninstall`. It removes JobDesk.app and the `~/.jobdesk` folder
