@@ -609,6 +609,15 @@ physical() { (cd -P "$1" 2>/dev/null && pwd -P); }
 
 # The entries JobDesk creates in its folder: uninstall removes these and
 # nothing else.
+# Is $1 JobDesk's app? A config could be edited to point anywhere, so check
+# the bundle: JobDesk.app by name, or (a branded DMG build) by bundle id.
+is_jobdesk_app() {
+  [ -d "$1" ] || return 1
+  case "$1" in *.app) ;; *) return 1 ;; esac
+  [ "$(basename "$1")" = JobDesk.app ] && return 0
+  [ "$(plutil -extract CFBundleIdentifier raw "$1/Contents/Info.plist" 2>/dev/null)" = com.martialstudios.jobdesk ]
+}
+
 OWNED_ENTRIES="bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock .DS_Store browsers shims claude secrets.env .secrets.env.new .dmg-build"
 
 # Removes only what JobDesk put in its folder, never the folder wholesale:
@@ -651,7 +660,7 @@ cmd_uninstall() {
     for pid in $(pgrep -f '/JobDesk\.app/Contents/MacOS/' 2>/dev/null); do
       kill -TERM "$pid" 2>/dev/null
     done
-    if [ -n "$JOBDESK_APP" ] && [ "$(basename "$JOBDESK_APP")" = "JobDesk.app" ] && [ -d "$JOBDESK_APP" ]; then
+    if [ -n "$JOBDESK_APP" ] && is_jobdesk_app "$JOBDESK_APP"; then
       rm -rf "$JOBDESK_APP"
       say "Removed $JOBDESK_APP"
     fi

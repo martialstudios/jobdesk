@@ -450,6 +450,19 @@ EOF
   expect_eq "open: an odd path is dropped" "$(ot claude '/x?y=1&z')" "http://127.0.0.1:4788/jobdesk-start.html?cli=claude"
   expect_eq "open: no AI chosen, no start page" "$(ot none /pipeline)" "http://127.0.0.1:4788/pipeline"
 
+  # Uninstall recognizes JobDesk's app by name, or a renamed (branded) one by bundle id.
+  # shellcheck disable=SC2329  # called through expect_true/expect_false
+  is_app() { JOBDESK_SOURCE_ONLY=1 "$BASH" -c '. "$1"; is_jobdesk_app "$2"' _ "$d/home/.jobdesk/bin/jobdesk" "$1"; }
+  mkdir -p "$d/apps/JobDesk.app/Contents" "$d/apps/Other.app/Contents" "$d/apps/NotAnApp"
+  expect_true "JobDesk.app is JobDesk's" is_app "$d/apps/JobDesk.app"
+  expect_false "a folder that isn't an app isn't" is_app "$d/apps/NotAnApp"
+  if command -v plutil >/dev/null 2>&1; then
+    expect_false "another app isn't" is_app "$d/apps/Other.app"
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.martialstudios.jobdesk</string></dict></plist>\n' \
+      > "$d/apps/Other.app/Contents/Info.plist"
+    expect_true "a renamed app with JobDesk's bundle id is" is_app "$d/apps/Other.app"
+  fi
+
   # `update` and `login` point a DMG user at the DMG, and change nothing.
   got=$(HOME="$d/home" "$BASH" "$d/home/.jobdesk/bin/jobdesk" update 2>&1)
   expect_eq "DMG update exits 0" "$?" 0

@@ -166,6 +166,15 @@ main_dmg() {
   case "${JOBDESK_DMG_ARCH:-}" in arm64|x64) ARCH="$JOBDESK_DMG_ARCH" ;; esac
   check_home_location
   load_existing_config
+  # A branded build names their folder; an existing install keeps its folder.
+  if [ -z "$EXISTING_DIR" ] && [ -f "$PAYLOAD/brand.env" ]; then
+    # shellcheck source=/dev/null
+    BRAND_DATA_DIR=$( . "$PAYLOAD/brand.env" && printf '%s' "${BRAND_DATA_DIR:-}")
+    case "$BRAND_DATA_DIR" in
+      ''|*/*|.|..) ;;
+      *) OPT_DIR="$HOME/$BRAND_DATA_DIR" ;;
+    esac
+  fi
   resolve_settings
   prepare_home
   LOG_FILE="$JOBDESK_HOME/logs/install.log"
@@ -197,7 +206,7 @@ main_dmg() {
   setup_browsers
   status 75 "Setting up the web app"
   setup_ui
-  status 85 "Setting up your career-ops folder"
+  status 85 "Setting up your job search folder"
   setup_career_ops
   status 92 "Finishing"
   setup_shims

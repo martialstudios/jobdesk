@@ -21,15 +21,15 @@ on run
 		quit
 		return
 	end if
-	openJobDesk()
+	openApp()
 end run
 
 -- Clicking the Dock icon again re-opens the browser tab.
 on reopen
-	openJobDesk()
+	openApp()
 end reopen
 
-on openJobDesk()
+on openApp()
 	try
 		if (do shell script launcher() & " needs-setup") is "yes" then setUp()
 		do shell script launcher() & " open --from-app"
@@ -50,7 +50,7 @@ on openJobDesk()
 		end if
 		quit
 	end try
-end openJobDesk
+end openApp
 
 -- First run (or a newer DMG): unpack JobDesk into your home folder. The work
 -- runs in the background so this window can show how far along it is.

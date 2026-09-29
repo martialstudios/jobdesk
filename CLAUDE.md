@@ -238,6 +238,40 @@ tools prompt, no downloads and no AI login. `tools/build-dmg.sh` builds
     needs git); only the web UI, Node and Claude Code move forward.
   - The Apply feature still needs Google Chrome installed.
 
+## Brand builds (2026-09-29)
+
+`tools/build-dmg.sh --brand=brands/<name>.env` builds a personalized DMG for
+one person. The owner's first one is `brands/asal.env` ("Asal’s Amazing Job
+Application Software From Ryan"). It's git-ignored because it's personal, so
+it lives only on the owner's Mac.
+
+- **`tools/brand_web.py`** rebrands career-ops's web UI before it's built.
+  - Every *visible* "career-ops" becomes the brand name. File paths, storage
+    keys, URLs and the prompts that drive Claude are kept; Claude is told to
+    use the brand name.
+  - The "co" logo and favicon become the app icon, the version pill and its
+    "Report a bug" link are dropped, and the home intro and the empty-pipeline
+    Terminal tip are rewritten.
+  - Each targeted edit must find its anchor, or the build fails.
+- **The CV-to-results overlay.** `ui/brand/jobdesk-fun.tsx` is mounted in the
+  app shell and driven by `jobdesk:fun` window events. cv-ingest sends
+  `start`, and in brand builds skips its review step (auto-saves once);
+  explore-provider sends `done`, and an error sends `stop`.
+  - Scripted lines come from `BRAND_FUN_LINES`. A last `null`-duration line
+    holds until the results are in, then `BRAND_FUN_REVEAL` shows briefly.
+  - Measured on Asal's build: 0/2/4/6/16 s as scripted, 👀 at 47 s, 101 roles
+    at 49 s.
+- **The rest of the app is branded too.** The app name (bundle name, file
+  name, every applet dialog: the build substitutes "JobDesk" in the
+  AppleScript's strings, so no handler name may contain "JobDesk"), the disk
+  image name, and the picture guide (`make_dmg_guide.py --name --from`).
+- **Her folder** is `~/<BRAND_DATA_DIR>` (via `payload/brand.env`) on a fresh
+  install; an existing install keeps its folder.
+- **Uninstall** recognizes a renamed app by its bundle id (`is_jobdesk_app`).
+- **Still visible after branding:** Claude-written evaluation reports can
+  mention career-ops's file names, and the MIT `LICENSE` stays in her folder
+  (required).
+
 ## Files
 
 | Path | What it is |

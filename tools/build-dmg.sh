@@ -23,6 +23,9 @@
 #                    request then has to name one (Console → Settings → Workspaces)
 #   --no-key         build without a Claude key (testing)
 #   --test-home=DIR  the app sets up in DIR instead of the real home (testing)
+#   --brand=FILE     a personalized build for one person: its name, the words in
+#                    it, their folder's name (see brands/example.env; needs python3
+#                    with Pillow for the picture guide)
 #
 # Runs on macOS (it needs osacompile, codesign and hdiutil) with network access.
 
@@ -36,6 +39,7 @@ KEY_FILE=""
 WORKSPACE_ID=""
 NO_KEY=0
 TEST_HOME=""
+BRAND_FILE=""
 CO_VERSION=""
 NODE_MAJOR=24
 CLAUDE_BASE=https://downloads.claude.ai/claude-code-releases
@@ -51,7 +55,8 @@ for arg in "$@"; do
     --workspace-id=*) WORKSPACE_ID="${arg#--workspace-id=}" ;;
     --no-key) NO_KEY=1 ;;
     --test-home=*) TEST_HOME="${arg#--test-home=}" ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    --brand=*) BRAND_FILE="${arg#--brand=}" ;;
+    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -71,6 +76,24 @@ WORK=$(mktemp -d "${tmp_root%/}/jobdesk-dmg.XXXXXX") || die "Couldn't create a t
 trap 'rm -rf "$WORK"' EXIT
 LOG="$WORK/build.log"
 run() { "$@" >> "$LOG" 2>&1 || { tail -n 40 "$LOG" >&2; die "failed: $*"; }; }
+
+APP_NAME=JobDesk
+VOLUME_NAME=JobDesk
+if [ -n "$BRAND_FILE" ]; then
+  [ -f "$BRAND_FILE" ] || die "No brand file at $BRAND_FILE."
+  command -v python3 >/dev/null 2>&1 || die "--brand needs python3."
+  set -a
+  # shellcheck source=/dev/null
+  . "$BRAND_FILE"
+  set +a
+  [ -n "${BRAND_NAME:-}" ] || die "$BRAND_FILE has no BRAND_NAME."
+  case "$BRAND_NAME${BRAND_VOLUME:-}" in
+    *[\"\'\`\\\$\<\>\{\}/:]*) die "BRAND_NAME and BRAND_VOLUME can't contain \" ' \` \\ \$ < > { } / : (use a curly ’)." ;;
+  esac
+  APP_NAME="$BRAND_NAME"
+  VOLUME_NAME="${BRAND_VOLUME:-$BRAND_NAME}"
+  python3 -c 'import PIL' 2>/dev/null || die "--brand needs Pillow for the picture guide: python3 -m pip install pillow"
+fi
 
 # The key first: a build that can't have one should stop before the downloads.
 KEY=""
@@ -135,9 +158,13 @@ cp "$CO/VERSION" "$UI/VERSION"
   JOBDESK_SOURCE_ONLY=1 . "$ROOT/install.sh"
   patch_web_ui "$UI/web"
 ) || die "career-ops $CO_VERSION changed the line JobDesk patches (patch_web_ui in install.sh). Update the patch."
+cp "$ROOT/ui/jobdesk-start.html" "$UI/web/public/jobdesk-start.html"
+if [ -n "$BRAND_FILE" ]; then
+  say "Branding it: $APP_NAME"
+  python3 "$ROOT/tools/brand_web.py" "$UI/web" "$ROOT/assets/JobDesk.png" || die "Couldn't brand the web UI (see above)."
+fi
 ( cd "$UI/web" && npm ci --no-audit --no-fund && npm run build && npm prune --omit=dev --no-audit --no-fund ) >> "$LOG" 2>&1 ||
   die "The web UI didn't build (see $LOG)."
-cp "$ROOT/ui/jobdesk-start.html" "$UI/web/public/jobdesk-start.html"
 # Build-only: the compiler and the build cache.
 rm -rf "$UI/web/.next/cache" "$UI/web/node_modules/@next"/swc-*
 # sharp (Next's image library) only installed its own architecture: add the other.
@@ -211,11 +238,18 @@ if [ -n "$KEY" ]; then
   )
 fi
 KEY=""
+if [ -n "$BRAND_FILE" ]; then
+  # For first-run setup: the name of their folder in the home folder.
+  printf 'BRAND_DATA_DIR=%q\n' "${BRAND_DATA_DIR:-}" > "$PAY/brand.env"
+fi
 
 # ── the app ────────────────────────────────────────────────────────────────
-say "JobDesk.app"
-APP="$WORK/dmg/JobDesk.app"
-run osacompile -s -o "$APP" "$ROOT/macos/JobDeskDMG.applescript"
+say "$APP_NAME.app"
+APP="$WORK/dmg/$APP_NAME.app"
+# The applet's windows and dialogs say the app's name.
+applet_src=$(cat "$ROOT/macos/JobDeskDMG.applescript")
+printf '%s\n' "${applet_src//JobDesk/$APP_NAME}" > "$WORK/applet.applescript"
+run osacompile -s -o "$APP" "$WORK/applet.applescript"
 # install.sh's brand_app: icon, name, bundle id, version.
 (
   # shellcheck source=install.sh
@@ -224,6 +258,10 @@ run osacompile -s -o "$APP" "$ROOT/macos/JobDeskDMG.applescript"
   JOBDESK_VERSION="$VERSION"   # sourcing install.sh blanked it
   brand_app "$APP"
 ) || die "Couldn't brand JobDesk.app."
+if ! { plutil -replace CFBundleName -string "$APP_NAME" "$APP/Contents/Info.plist" &&
+       plutil -replace CFBundleDisplayName -string "$APP_NAME" "$APP/Contents/Info.plist"; }; then
+  die "Couldn't name the app."
+fi
 cp "$ROOT/macos/dmg/launch" "$APP/Contents/Resources/launch"
 chmod 755 "$APP/Contents/Resources/launch"
 mv "$PAY" "$APP/Contents/Resources/payload"
@@ -232,14 +270,20 @@ run codesign --force --deep --sign - "$APP"
 run codesign --verify --deep --strict "$APP"
 
 # ── the disk image ─────────────────────────────────────────────────────────
-say "JobDesk.dmg"
+say "$VOLUME_NAME.dmg"
 ln -s /Applications "$WORK/dmg/Applications"
-cp "$ROOT/assets/dmg/How to open JobDesk.png" "$WORK/dmg/How to open JobDesk.png"
 mkdir -p "$OUT"
-DMG="$OUT/JobDesk-$VERSION.dmg"
-[ -n "$TEST_HOME" ] && DMG="$OUT/JobDesk-$VERSION-test.dmg"
+if [ -n "$BRAND_FILE" ]; then
+  python3 "$ROOT/tools/make_dmg_guide.py" --name="$APP_NAME" --from="${BRAND_FROM:-a friend}" \
+    --out="$WORK/dmg/How to open $VOLUME_NAME.png" >> "$LOG" 2>&1 || die "Couldn't draw the picture guide."
+  DMG="$OUT/$VOLUME_NAME.dmg"
+else
+  cp "$ROOT/assets/dmg/How to open JobDesk.png" "$WORK/dmg/How to open JobDesk.png"
+  DMG="$OUT/JobDesk-$VERSION.dmg"
+fi
+[ -n "$TEST_HOME" ] && DMG="${DMG%.dmg}-test.dmg"
 rm -f "$DMG"
-run hdiutil create -volname JobDesk -srcfolder "$WORK/dmg" -fs HFS+ -format ULMO "$DMG"
+run hdiutil create -volname "$VOLUME_NAME" -srcfolder "$WORK/dmg" -fs HFS+ -format ULMO "$DMG"
 size=$(du -h "$DMG" | awk '{print $1}')
 say "Built $DMG, $size"
 say "  $BUILD_ID"
