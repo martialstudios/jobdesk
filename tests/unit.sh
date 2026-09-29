@@ -273,6 +273,22 @@ EOF
   wait "$fake" 2>/dev/null
   printf '999999\n' > "$PID_FILE"
   expect_false "stale pid file" running_pid
+
+  # `stop` marks the pid it takes down, so a `start` still waiting on that
+  # server exits quietly instead of reporting a failure.
+  bash -c 'exec -a next-server sleep 30' &
+  fake=$!
+  sleep 0.3
+  write_pid_file "$PID_FILE" "$fake"
+  rm -f "$STOP_MARK"
+  expect_false "no stop requested yet" stopped_on_request "$fake"
+  ( QUIET=1 cmd_stop ) >/dev/null
+  wait "$fake" 2>/dev/null
+  expect_false "stop took the server down" kill -0 "$fake" 2>/dev/null
+  expect_true "stop marked the pid it stopped" stopped_on_request "$fake"
+  expect_false "the mark names only that pid" stopped_on_request 999999
+  expect_false "an empty pid never matches" stopped_on_request ""
+  rm -f "$STOP_MARK"
   expect_false "nothing healthy on a closed port" healthy 47399
 
   # stop_pid takes down the whole tree, including a child in its own process

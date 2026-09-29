@@ -42,10 +42,14 @@ SERVER_LOG="$LOG_DIR/server.log"
 PID_FILE="$RUN_DIR/server.pid"
 PORT_FILE="$RUN_DIR/server.port"
 START_LOCK="$RUN_DIR/start.lock"
+STOP_MARK="$RUN_DIR/stopping"   # the pid `stop` is taking down
 INSTALL_LOCK="$JOBDESK_HOME/.install-lock"
 UI_WEB="$JOBDESK_HOME/ui/current/web"
 NODE_BIN="$JOBDESK_HOME/node/bin/node"
 DEFAULT_PORT=4788
+# `start` exits with this when a `stop` took its server down mid-start, so the
+# app can quit quietly instead of reporting a failure.
+EXIT_STOPPED=3
 
 # Defaults; config.env (written by the installer) overrides them.
 JOBDESK_CAREER_OPS_DIR="$HOME/career-ops"
@@ -304,7 +308,7 @@ cmd_start() {
     fi
     stop_pid "$pid"
   fi
-  rm -f "$PID_FILE" "$PORT_FILE"
+  rm -f "$PID_FILE" "$PORT_FILE" "$STOP_MARK"
   installing && die "JobDesk is being installed or updated right now. Try again when that finishes."
   check_installed
   mkdir -p "$RUN_DIR" "$LOG_DIR"
@@ -338,6 +342,10 @@ cmd_start() {
       say "JobDesk is running at $(url_for "$port")"
       return 0
     fi
+    if stopped_on_request "$pid"; then
+      say "JobDesk was stopped before it finished starting."
+      exit "$EXIT_STOPPED"
+    fi
     stop_pid "$pid"
     rm -f "$PID_FILE" "$PORT_FILE"
     # Another app grabbed the port between our check and the bind: try the next.
@@ -351,9 +359,16 @@ cmd_start() {
   exit 1
 }
 
+# Did a `stop` take down server $1? It leaves the mark before killing, so a
+# `start` that sees its server die can tell a stop from a crash.
+stopped_on_request() {
+  [ -n "${1:-}" ] && [ "$(sed -n 1p "$STOP_MARK" 2>/dev/null)" = "$1" ]
+}
+
 cmd_stop() {
   local pid
   if pid=$(running_pid); then
+    printf '%s\n' "$pid" > "$STOP_MARK"
     stop_pid "$pid"
     say "JobDesk stopped."
   else

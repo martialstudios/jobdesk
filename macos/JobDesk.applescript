@@ -26,6 +26,11 @@ on openJobDesk()
 		do shell script jobdeskBin() & " open --from-app"
 	on error errText number errNum
 		if errNum is -128 then return
+		-- 3: `jobdesk stop` ran while JobDesk was starting. Not a failure.
+		if errNum is 3 then
+			quit
+			return
+		end if
 		set dialogResult to display dialog "JobDesk couldn't start." & return & return & errText buttons {"Show Log", "OK"} default button "OK" with title "JobDesk" with icon caution
 		if button returned of dialogResult is "Show Log" then
 			try

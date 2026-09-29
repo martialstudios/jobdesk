@@ -20,22 +20,26 @@ application form for you to review, and tracks every application.
   - The owner has to create that repo. The Claude GitHub App gets
     `403 Resource not accessible by integration` on `POST /user/repos`, so a
     session can't create repos.
-- **Tested so far (Linux):**
-  - `tests/unit.sh`: 94 checks, all passing on bash 5.2 and bash 3.2.57.
-  - `tests/e2e.sh`: passes with both.
+- **Tested so far:**
+  - `tests/unit.sh`: 99 checks, all passing on bash 5.2 (Linux) and on
+    macOS's own `/bin/bash` 3.2.57.
+  - `tests/e2e.sh`: passes on Linux, and on a real Apple Silicon Mac
+    (macOS 26, 2026-09-28): the full app check (`osacompile`, `plutil`,
+    `codesign`, launching via `open`, quitting when idle) and the update from
+    career-ops 1.33.0 to 1.34.0.
   - Three rounds of adversarial testing found about 25 defects. All are fixed,
     and the last round found nothing.
   - Concurrency stress test: 3 simultaneous starts, 0 of 12 rounds ended with
     two servers.
-- **Not yet run on a real Mac:**
-  - `JobDesk.app` itself: `osacompile`, `plutil`, `codesign`, `lsregister`,
-    launching it, and quitting it when idle.
-  - `open`, and `/bin/bash` 3.2 exactly as Apple ships it.
-  - Intel Macs.
-  - Updating from career-ops 1.33.0 to the latest.
-
-  The CI jobs `e2e (macos-latest)` and `update` cover everything except Intel.
-  Expect to iterate on the first PR's macOS results.
+- **The first real-Mac run found two bugs** (both fixed):
+  - macOS's `$TMPDIR` ends in `/`, so temp paths carried `//`. Every
+    `mktemp -d` now strips it.
+  - A `stop` landing while the app's `open` was still waiting for the server
+    made `start` report a failure. The applet then showed a modal "couldn't
+    start" dialog, which blocks `on idle`, so it never quit. Now `stop` marks
+    the pid it takes down (`run/stopping`). `start` then exits with code 3
+    (`EXIT_STOPPED`), and the applet quits quietly on 3.
+- **Not yet run:** Intel Macs.
 
 ---
 
@@ -214,7 +218,7 @@ round found nothing.
   - Missing `node_modules`.
   - An unreachable AI installer, which is now a warning.
 - **Processes:**
-  - Concurrent `start`/`open`.
+  - Concurrent `start`/`open`, and a `stop` during a start.
   - Stale locks and PID files whose PID is reused, or that are in the old
     format.
   - Time-zone or locale changes between writing and reading a start time.
