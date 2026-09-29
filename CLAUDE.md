@@ -1,0 +1,259 @@
+# CLAUDE.md — JobDesk (standalone; assume you've read nothing else)
+
+JobDesk is a one-line Mac installer plus a Mac app for the web UI of
+[career-ops](https://github.com/career-ops-hq/career-ops), an open-source AI
+job-search system. Paste in job links and career-ops scores each one against
+your CV, writes a tailored CV and cover letter per company, fills in the
+application form for you to review, and tracks every application.
+
+- **Owner:** `martialstudios` (a personal GitHub account, not an org).
+- **Who it's for:** the owner and a friend, each on their own Mac with their
+  own AI account. Their data is never shared.
+- **Origin:** built 2026-09-27/28 in a Claude Code cloud session.
+
+---
+
+## ⏱️ Status (read first)
+
+- **Version 0.1.0 is code complete.** The first publish goes to the empty repo
+  `martialstudios/jobdesk`, as a PR onto an empty root commit on `main`.
+  - The owner has to create that repo. The Claude GitHub App gets
+    `403 Resource not accessible by integration` on `POST /user/repos`, so a
+    session can't create repos.
+- **Tested so far (Linux):**
+  - `tests/unit.sh`: 94 checks, all passing on bash 5.2 and bash 3.2.57.
+  - `tests/e2e.sh`: passes with both.
+  - Three rounds of adversarial testing found about 25 defects. All are fixed,
+    and the last round found nothing.
+  - Concurrency stress test: 3 simultaneous starts, 0 of 12 rounds ended with
+    two servers.
+- **Not yet run on a real Mac:**
+  - `JobDesk.app` itself: `osacompile`, `plutil`, `codesign`, `lsregister`,
+    launching it, and quitting it when idle.
+  - `open`, and `/bin/bash` 3.2 exactly as Apple ships it.
+  - Intel Macs.
+  - Updating from career-ops 1.33.0 to the latest.
+
+  The CI jobs `e2e (macos-latest)` and `update` cover everything except Intel.
+  Expect to iterate on the first PR's macOS results.
+
+---
+
+## What the user gets
+
+```
+curl -fsSL https://raw.githubusercontent.com/martialstudios/jobdesk/main/install.sh | bash
+```
+
+This one line, pasted into Terminal, installs everything with no sudo:
+1. git. If it's missing, Apple's Command Line Tools install prompt appears.
+2. Its own copy of Node 24 in `~/.jobdesk`, checked against nodejs.org's SHA-256.
+3. career-ops, cloned at its latest release tag into `~/career-ops`. The user's
+   CV, tracker, reports and PDFs live here.
+4. career-ops's official web UI, built from **the same release tag** into
+   `~/.jobdesk/ui` and pointed at `~/career-ops` via `CAREER_OPS_ROOT`.
+5. The AI tool the user picks: Claude Code (Anthropic's official installer),
+   Codex (`@openai/codex`), or Gemini CLI (`@google/gemini-cli`). The last two
+   go into `~/.jobdesk/tools`. The installer then offers to log in and checks
+   the login.
+6. `JobDesk.app` in `/Applications` (or `~/Applications`), compiled **on the
+   user's Mac** with `osacompile`.
+
+Running the same line again, or `jobdesk update`, updates and repairs.
+
+The app is a stay-open AppleScript applet:
+- Clicking it runs `jobdesk open`, which starts the local server and opens the
+  browser.
+- Quitting it from the Dock runs `jobdesk stop`.
+- Every 30 s its `on idle` handler runs `jobdesk alive` and quits if the server
+  is gone.
+
+The career-ops web UI (Next.js, alpha) provides:
+- a pipeline and tracker
+- per-job evaluation reports and 1–5 scores
+- tailored CV and cover-letter PDFs
+- Apply: prefills the application form in Google Chrome and **never
+  submits**. That is a hard career-ops rule, kept on purpose.
+- a built-in assistant for onboarding
+
+---
+
+## Architecture decisions (don't relitigate)
+
+- **Named "JobDesk", not "career-ops-something".** career-ops's `TRADEMARK.md`
+  requires permission for product names containing "career-ops". JobDesk says
+  it "works with" career-ops and is unaffiliated.
+- **Use career-ops's official web UI (`web/`) as-is.** Don't fork it, and don't
+  use the community GUIs (small, and third-party code touching CVs).
+- **JobDesk keeps its own copy of `web/`.** It's extracted from the career-ops
+  release tag matching the core's `VERSION`, and run with `CAREER_OPS_ROOT`
+  pointing at the user's checkout. Why:
+  - career-ops's updater (`update-system.mjs`) does not update `web/`.
+  - Building inside the user's checkout would dirty it.
+  - A missing tag is fetched into a **throwaway bare repo** under the
+    installer's temp dir. The user's repo is only ever read, which keeps a full
+    clone from turning into a shallow one.
+- **career-ops is installed and updated its own documented way.**
+  - Install is `git clone --depth=1 --branch career-ops-vX.Y.Z`, the same as
+    `npx @santifer/career-ops init`. It goes into a sibling
+    `.career-ops.jobdesk-partial.<pid>` folder and is renamed into place only
+    once complete.
+  - Updates run `node update-system.mjs apply --confirm`. That touches system
+    files only, never `cv.md`, `data/`, `reports/` or `output/`.
+  - If the Mac has no git identity, the updater gets `GIT_AUTHOR_*` and
+    `GIT_COMMITTER_*` variables for that one run; their git config is never
+    changed.
+- **Private Node, no Homebrew, no sudo.** `GIT_TERMINAL_PROMPT=0` is set so git
+  can never hang on a password prompt.
+- **The app is compiled on the user's Mac, not downloaded.** Gatekeeper
+  therefore never quarantines it, with no notarization needed. After editing
+  the icon and Info.plist it gets an ad-hoc `codesign`.
+  - The applet has **no properties or globals**. An applet saves those into
+    itself on quit, which breaks its signature.
+  - The `jobdesk` path lives in a handler.
+- **The server:**
+  - `next start -H 127.0.0.1` on port 4788, or the next free one.
+  - It runs in its own process group (`set -m`).
+  - `stop` signals every process group led by a process in the server's
+    descendant tree. This matters because the web UI starts Codex runs
+    detached.
+  - Health checks use `curl --noproxy '*'`.
+- **Locks and PID files:**
+  - Locks are **symlinks** whose target is `pid|start time`, so creating one is
+    atomic. A stale one is removed only if it still names the same dead owner.
+  - The server's PID file holds `pid\nstart time`.
+  - Start times come from `LC_ALL=C TZ=UTC0 ps -o lstart=`, which doesn't vary
+    with locale or time zone.
+- **Uninstall deletes only what JobDesk owns.** That is the fixed
+  `OWNED_ENTRIES` list inside a folder carrying the `.jobdesk-home` marker. It
+  compares physical paths, and refuses outright if the career-ops folder, or
+  anything that looks like career-ops data (`cv.md`,
+  `*/data/applications.md`), is inside `~/.jobdesk`. It never deletes
+  `~/career-ops` or Claude Code.
+- **Paths are normalized** (`normalize_path`): symlinks are resolved in the part
+  that exists, and `..`, `.` and `//` lexically in the rest. Any folder
+  comparison has to go through it.
+- **Everything is bash 3.2** (macOS `/bin/bash`), shellcheck-clean and BSD-tool
+  safe. So no `sed -i`, `readlink -f`, `timeout`, `sort -V`, associative arrays
+  or `$BASHPID`, and no empty arrays under `set -u`.
+- **The Playwright MCP is not set up.** The web UI's apply flow uses its own
+  Playwright and Chrome; only the CLI `apply` mode would use the MCP. PDFs need
+  Playwright's Chromium, which is installed via `npx playwright install
+  chromium` and is non-fatal.
+
+## Files
+
+| Path | What it is |
+|---|---|
+| `install.sh` | Installer / updater / repairer. Everything is in functions, with `main "$@"` last. It ends with the marker `__JOBDESK_INSTALLER_END__`, and `jobdesk update` refuses a download without it. |
+| `bin/jobdesk` | Control script, installed to `~/.jobdesk/bin` and linked from `~/.local/bin`. Subcommands: `open`, `start`, `stop`, `restart`, `status`, `alive`, `login`, `update`, `doctor`, `logs`, `uninstall`, `version`. It finds its install from its own path. |
+| `macos/JobDesk.applescript` | Applet source. `__JOBDESK_BIN__` is replaced at install time. |
+| `assets/JobDesk.icns`, `.png` | Icon, rendered by `tools/make_icon.py` (Pillow). |
+| `assets/screenshots/*` | README images, taken from career-ops's own sample fixture. |
+| `tests/unit.sh` | Offline unit checks; `JOBDESK_SOURCE_ONLY=1` sources the scripts. |
+| `tests/e2e.sh` | Real install into a throwaway HOME: start, HTTP checks, re-run, uninstall. On macOS it also checks the app. `E2E_OLD_CAREER_OPS=1.33.0` adds an update test. |
+| `.github/workflows/ci.yml` | shellcheck + unit tests (ubuntu); unit + e2e on macOS and ubuntu (macOS under `/bin/bash` 3.2); update test on macOS. |
+
+**Settings on the user's Mac:** `~/.jobdesk/config.env`, which the installer
+writes with `printf %q` quoting.
+
+**Environment variables:**
+- For users: `JOBDESK_HOME`, `JOBDESK_REPO`, `JOBDESK_REF`.
+- For tests and power users: `JOBDESK_SRC_DIR`, `JOBDESK_CAREER_OPS_VERSION`,
+  `JOBDESK_CAREER_OPS_GIT`, `JOBDESK_NODE_VERSION`, `JOBDESK_ALLOW_ROOT`,
+  `JOBDESK_YES`, `JOBDESK_NO_LAUNCH`, `JOBDESK_AI_CHOICE`.
+
+## Testing
+
+```bash
+shellcheck -s bash install.sh bin/jobdesk tests/*.sh   # pip install shellcheck-py if missing
+bash tests/unit.sh                                     # offline, ~20 s
+JOBDESK_ALLOW_ROOT=1 bash tests/e2e.sh                 # network, ~50 s; root needs ALLOW_ROOT
+```
+
+- **Testing under bash 3.2 on Linux (optional):** the authoritative check is CI,
+  which runs everything under the real macOS `/bin/bash` 3.2.
+  - For a local check, the 2026-09 session built Apple's bash from
+    `https://github.com/apple-oss-distributions/bash`. That repo uses Apple's
+    own tag numbers (e.g. `bash-99`); its `bash-3.2` tree is what macOS ships
+    as 3.2.57.
+  - Building that old C code on Linux needed a few small shims plus permissive
+    flags, e.g. `CFLAGS="-std=gnu89 -fcommon -Wno-implicit-function-declaration
+    -Wno-implicit-int -Wno-int-conversion"`.
+  - GNU's download mirrors are blocked in the cloud sandbox, but `git clone`
+    from GitHub works.
+  - Then run `/path/to/bash tests/unit.sh`.
+- **Cloud sandbox network:**
+  - Works: `nodejs.org`, `registry.npmjs.org`, `raw.githubusercontent.com`, and
+    `git clone`/`ls-remote` of public GitHub repos.
+  - Blocked: `api.github.com`, `codeload.github.com`, GitHub HTTP downloads, and
+    Playwright's browser CDN.
+  - So in the sandbox, "Installing the browser career-ops uses to make PDFs"
+    fails (expected), career-ops's own update check reports offline (expected),
+    and `jobdesk update` can't fetch its tarball (use a local checkout).
+- **Running as root:** `JOBDESK_ALLOW_ROOT=1` is required.
+- **Don't `pkill -f` with a pattern that appears in your own command line.** It
+  kills your shell. Kill by PID.
+
+## Hardening history (what's already been adversarially verified)
+
+Three rounds of an adversarial reviewer ran the real code against constructed
+states. Everything below was reproduced, fixed, and re-verified; the final
+round found nothing.
+- **Data safety:**
+  - Uninstall with career-ops inside `~/.jobdesk`, reached directly, via `..`
+    through a missing folder, or via a symlink.
+  - Tampered `config.env`, stale `JOBDESK_APP`, and an old app in a folder that
+    isn't writable.
+  - A full clone made shallow.
+- **Partial failures:**
+  - SIGKILL during the clone, `npm ci` or the build, followed by an immediate
+    re-run.
+  - A failed rebuild, where the previous UI is kept and the server restarted.
+  - `ui/current` becoming a real directory.
+  - Missing `node_modules`.
+  - An unreachable AI installer, which is now a warning.
+- **Processes:**
+  - Concurrent `start`/`open`.
+  - Stale locks and PID files whose PID is reused, or that are in the old
+    format.
+  - Time-zone or locale changes between writing and reading a start time.
+  - Detached AI runs surviving `stop`.
+  - Closing Terminal or Ctrl-C mid-step. Each step runs in its own process
+    group, and cleanup escalates to SIGKILL after 3 s.
+  - `http_proxy` set.
+- **Input and update:**
+  - Bad ports, including leading zeros and 20 digits.
+  - `--dir=.`, relative `..`, `//`, and a `JOBDESK_HOME` that is `$HOME`,
+    inside career-ops, or not empty.
+  - Files planted next to a downloaded installer: now it only trusts a git
+    checkout.
+  - A non-default `JOBDESK_HOME` during update.
+  - `--help` when piped.
+
+## Publishing (first time)
+
+1. The owner creates an **empty public** repo at
+   `https://github.com/new?owner=martialstudios&name=jobdesk&visibility=public`,
+   and gives the Claude GitHub App access at https://claude.ai/connect-github.
+2. The session attaches it (`add_repo` with `access: push`) and pushes `main`
+   (the empty root commit) plus the feature branch, then opens a **draft PR**
+   onto `main`.
+3. Get CI green. macOS is where surprises would be: `osacompile -s` output,
+   `plutil` keys, `codesign --verify --deep --strict`, the app launching under
+   `open` in CI, and the idle quit within 90 s.
+   - If `open` can't launch apps on the runner, the e2e prints a warning and
+     skips that check.
+4. The owner merges. From then on, the one-line install in `README.md` is live.
+
+## Open items / ideas (not started)
+
+- A signed and notarized `.dmg`. It needs an Apple Developer ID ($99/yr); not
+  needed today because the app is built locally.
+- Intel Mac coverage in CI. The macOS images' labels change over time, so check
+  current GitHub runner labels first.
+- Pre-selecting the AI CLI in the web UI. It lives in the browser's
+  `localStorage`, per origin (port), so users pick it once on the Config page.
+- Optional Playwright MCP setup, for people who also use career-ops's CLI
+  `apply` mode.
+- Checking for updates from the app itself.
