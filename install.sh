@@ -850,6 +850,32 @@ resolve_ui_source() {
 
 build_ui() { cd "$1/web" && npm ci --no-audit --no-fund && npm run build; }
 
+# JobDesk's one change to career-ops's web UI (see CLAUDE.md): the first scan
+# after you save your CV skips Workday. Its boards all sit behind one host, so
+# it takes ~5 minutes where Greenhouse, Lever and Ashby take ~1, and nothing
+# shows until every board is done. Workday stays one click away in "Refine search".
+WEB_PATCH_FILE="src/components/cv/cv-ingest.tsx"
+WEB_PATCH_FROM='ats: [...DEFAULT_FILTERS.ats], positive: roles, sinceDays: 30'
+WEB_PATCH_TO='ats: DEFAULT_FILTERS.ats.filter((a) => a !== "workday"), positive: roles, sinceDays: 30'
+WEB_PATCH_ID="first-scan-no-workday"
+
+# patch_web_ui WEB_DIR: apply it (already applied is fine). Fails when this
+# career-ops version no longer has the line, so the change can't go stale silently.
+patch_web_ui() {
+  local f="$1/$WEB_PATCH_FILE"
+  [ -f "$f" ] || return 1
+  grep -qF "$WEB_PATCH_TO" "$f" && return 0
+  grep -qF "$WEB_PATCH_FROM" "$f" || return 1
+  awk -v from="$WEB_PATCH_FROM" -v to="$WEB_PATCH_TO" '
+    { i = index($0, from); if (i) $0 = substr($0, 1, i - 1) to substr($0, i + length(from)); print }
+  ' "$f" > "$f.jobdesk" && mv "$f.jobdesk" "$f"
+}
+
+# JobDesk's start page (see ui/jobdesk-start.html), served by the web UI.
+add_start_page() {
+  mkdir -p "$1/web/public" && cp "$SRC_DIR/ui/jobdesk-start.html" "$1/web/public/jobdesk-start.html"
+}
+
 ui_ready() {
   [ -f "$1/web/.next/BUILD_ID" ] && [ -f "$1/web/node_modules/next/dist/bin/next" ]
 }
@@ -859,12 +885,13 @@ ensure_ui() {
   step "career-ops web UI"
   v=$(core_version_of "$CAREER_OPS_DIR")
   if resolve_ui_source "$v"; then
-    stamp="$UI_TAG node=$(node --version)"
+    stamp="$UI_TAG node=$(node --version) $WEB_PATCH_ID"
   else
-    stamp="worktree-$(git -C "$CAREER_OPS_DIR" rev-parse HEAD 2>/dev/null) node=$(node --version)"
+    stamp="worktree-$(git -C "$CAREER_OPS_DIR" rev-parse HEAD 2>/dev/null) node=$(node --version) $WEB_PATCH_ID"
   fi
   if [ -L "$ui/current" ] && [ -f "$ui/current/.jobdesk-built" ] &&
      [ "$(cat "$ui/current/.jobdesk-built")" = "$stamp" ] && ui_ready "$ui/current"; then
+    add_start_page "$ui/current" || warn "Couldn't add JobDesk's start page to the web UI."
     ok "The web UI for career-ops $v is ready"
     return 0
   fi
@@ -885,6 +912,8 @@ ensure_ui() {
   fi
   [ -f "$dir/web/package.json" ] ||
     { rm -rf "$dir"; die "This career-ops version ($v) has no web UI. Update career-ops and try again."; }
+  patch_web_ui "$dir/web" ||
+    warn "This career-ops version changed; its first job scan includes Workday, so it takes a few minutes."
 
   if ! run_step "Installing and building the web UI" build_ui "$dir"; then
     rm -rf "$dir"
@@ -894,6 +923,7 @@ ensure_ui() {
     die "The web UI didn't build (see the log)."
   fi
   printf '%s\n' "$stamp" > "$dir/.jobdesk-built"
+  add_start_page "$dir" || warn "Couldn't add JobDesk's start page to the web UI."
   # `current` must be a link; anything else there would swallow the new one.
   if [ -e "$ui/current" ] && [ ! -L "$ui/current" ]; then
     rm -rf "$ui/current"

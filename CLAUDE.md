@@ -95,8 +95,24 @@ The career-ops web UI (Next.js, alpha) provides:
 - **Named "JobDesk", not "career-ops-something".** career-ops's `TRADEMARK.md`
   requires permission for product names containing "career-ops". JobDesk says
   it "works with" career-ops and is unaffiliated.
-- **Use career-ops's official web UI (`web/`) as-is.** Don't fork it, and don't
-  use the community GUIs (small, and third-party code touching CVs).
+- **Use career-ops's official web UI (`web/`), with one small patch.** Don't fork
+  it, and don't use the community GUIs (small, and third-party code touching CVs).
+  - Since 2026-09-29, one line is patched at build time (`patch_web_ui` in
+    `install.sh`). The owner's non-technical test found drop-CV-to-results far
+    too slow, so the first scan after saving a CV skips Workday. Its boards sit
+    behind one host and took ~5 of ~6 minutes, with nothing shown until every
+    board finished; without it, results arrive in ~1 minute. Workday is still
+    in "Refine search".
+  - The DMG build refuses to finish if the line changed; the Terminal installer
+    warns and builds unpatched. Keep any further patches this small and checked.
+- **JobDesk's start page** (`ui/jobdesk-start.html`, added as a static file in
+  `web/public/`). career-ops keeps the chosen AI CLI in the browser's
+  localStorage, and its PDF CV import doesn't fall back to the only installed
+  CLI: without a choice it sends people to Config first.
+  - `jobdesk open` opens `/jobdesk-start.html?cli=$JOBDESK_AI`, which saves that
+    choice when none exists yet, then goes to `/`.
+  - Next.js only indexes `public/` at server start, so a running server needs a
+    restart to serve a newly added start page.
 - **JobDesk keeps its own copy of `web/`.** It's extracted from the career-ops
   release tag matching the core's `VERSION`, and run with `CAREER_OPS_ROOT`
   pointing at the user's checkout. Why:
@@ -341,8 +357,9 @@ round found nothing.
   needed today because the app is built locally.
 - Intel Mac coverage in CI. The macOS images' labels change over time, so check
   current GitHub runner labels first.
-- Pre-selecting the AI CLI in the web UI. It lives in the browser's
-  `localStorage`, per origin (port), so users pick it once on the Config page.
+- Scoring the first few scan results automatically, so the first thing a new
+  user sees is scored roles. Today they click Evaluate on a role, which spends
+  tokens. It would need another web UI patch, and it's a cost decision for the owner.
 - Optional Playwright MCP setup, for people who also use career-ops's CLI
   `apply` mode.
 - Checking for updates from the app itself.

@@ -130,8 +130,14 @@ say "Building the web UI"
 UI="$WORK/common/ui"
 git -C "$CO" archive --format=tar "career-ops-v$CO_VERSION" web | tar -xf - -C "$UI" || die "Couldn't unpack web/."
 cp "$CO/VERSION" "$UI/VERSION"
+(
+  # shellcheck source=install.sh
+  JOBDESK_SOURCE_ONLY=1 . "$ROOT/install.sh"
+  patch_web_ui "$UI/web"
+) || die "career-ops $CO_VERSION changed the line JobDesk patches (patch_web_ui in install.sh). Update the patch."
 ( cd "$UI/web" && npm ci --no-audit --no-fund && npm run build && npm prune --omit=dev --no-audit --no-fund ) >> "$LOG" 2>&1 ||
   die "The web UI didn't build (see $LOG)."
+cp "$ROOT/ui/jobdesk-start.html" "$UI/web/public/jobdesk-start.html"
 # Build-only: the compiler and the build cache.
 rm -rf "$UI/web/.next/cache" "$UI/web/node_modules/@next"/swc-*
 # sharp (Next's image library) only installed its own architecture: add the other.

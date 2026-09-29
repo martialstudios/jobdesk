@@ -414,11 +414,26 @@ open_url() {
   fi
 }
 
+# open_target PORT [PATH]: the address `open` sends the browser to. Through
+# JobDesk's start page (ui/jobdesk-start.html) when the web UI has it, so the
+# AI helper JobDesk set up is already picked; career-ops remembers that choice
+# in the browser and won't read a PDF CV without it.
+open_target() {
+  local base path="${2:-}"
+  base=$(url_for "$1")
+  case "$path" in *[!A-Za-z0-9/_.-]*) path="" ;; esac
+  if [ -f "$UI_WEB/public/jobdesk-start.html" ] && ai_bin_name >/dev/null; then
+    printf '%s/jobdesk-start.html?cli=%s%s' "$base" "$JOBDESK_AI" "${path:+&to=$path}"
+  else
+    printf '%s%s' "$base" "$path"
+  fi
+}
+
 cmd_open() {
   local port path="${1:-}"
   cmd_start >/dev/null || exit 1
   port=$(running_port)
-  open_url "$(url_for "$port")$path"
+  open_url "$(open_target "$port" "$path")"
   say "JobDesk is open at $(url_for "$port")$path"
 }
 

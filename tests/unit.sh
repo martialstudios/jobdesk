@@ -217,6 +217,19 @@ EOF
     *) fail "planted source was trusted: $out" ;;
   esac
 
+  # patch_web_ui: JobDesk's one change to career-ops's web UI.
+  pw="$SCRATCH/patchweb"
+  mkdir -p "$pw/src/components/cv"
+  printf '    const f = { ...DEFAULT_FILTERS, ats: [...DEFAULT_FILTERS.ats], positive: roles, sinceDays: 30 };\n' > "$pw/$WEB_PATCH_FILE"
+  expect_true "patch_web_ui applies" patch_web_ui "$pw"
+  expect_eq "patch_web_ui result" "$(cat "$pw/$WEB_PATCH_FILE")" \
+    '    const f = { ...DEFAULT_FILTERS, ats: DEFAULT_FILTERS.ats.filter((a) => a !== "workday"), positive: roles, sinceDays: 30 };'
+  expect_true "patch_web_ui is idempotent" patch_web_ui "$pw"
+  expect_eq "...and doesn't patch twice" "$(grep -c workday "$pw/$WEB_PATCH_FILE")" 1
+  printf 'something else\n' > "$pw/$WEB_PATCH_FILE"
+  expect_false "patch_web_ui fails when the line changed" patch_web_ui "$pw"
+  expect_false "patch_web_ui fails without the file" patch_web_ui "$SCRATCH/nowhere"
+
   printf 'install.sh: %s passed, %s failed\n' "$PASSED" "$FAILED"
   [ "$FAILED" = 0 ]
 ) || FAILED=$(( FAILED + 1 ))
@@ -426,6 +439,16 @@ EOF
   : > "$t/home/.jobdesk/.jobdesk-home"
   got=$(HOME="$t/home" ANTHROPIC_API_KEY='' CLAUDE_CONFIG_DIR='' JOBDESK_SOURCE_ONLY=1 "$BASH" -c '. "$1"; dmg_server_env; printf "%s|%s|%s" "${ANTHROPIC_API_KEY:-}" "${CLAUDE_CONFIG_DIR:-}" "$(server_path)"' _ "$t/home/.jobdesk/bin/jobdesk")
   case "$got" in "||$t/home/.jobdesk/node/bin:"*) pass ;; *) fail "Terminal edition: no key, no Claude dir, no shims: $got" ;; esac
+
+  # `open` goes through JobDesk's start page when the UI has it and an AI is set.
+  ot() { HOME="$d/home" JOBDESK_SOURCE_ONLY=1 "$BASH" -c '. "$1"; JOBDESK_AI="$2"; open_target 4788 "$3"' _ "$d/home/.jobdesk/bin/jobdesk" "$@"; }
+  expect_eq "open: no start page yet" "$(ot claude "")" "http://127.0.0.1:4788"
+  mkdir -p "$d/home/.jobdesk/ui/current/web/public"
+  : > "$d/home/.jobdesk/ui/current/web/public/jobdesk-start.html"
+  expect_eq "open: via the start page" "$(ot claude "")" "http://127.0.0.1:4788/jobdesk-start.html?cli=claude"
+  expect_eq "open: a path rides along" "$(ot claude /pipeline)" "http://127.0.0.1:4788/jobdesk-start.html?cli=claude&to=/pipeline"
+  expect_eq "open: an odd path is dropped" "$(ot claude '/x?y=1&z')" "http://127.0.0.1:4788/jobdesk-start.html?cli=claude"
+  expect_eq "open: no AI chosen, no start page" "$(ot none /pipeline)" "http://127.0.0.1:4788/pipeline"
 
   # `update` and `login` point a DMG user at the DMG, and change nothing.
   got=$(HOME="$d/home" "$BASH" "$d/home/.jobdesk/bin/jobdesk" update 2>&1)
