@@ -407,10 +407,12 @@ EOF
   : > "$d/home/.jobdesk/.jobdesk-home"
   printf 'JOBDESK_EDITION=dmg\n' > "$d/home/.jobdesk/config.env"
   printf 'ANTHROPIC_API_KEY=%q\n' "sk-ant-test key" > "$d/home/.jobdesk/secrets.env"
+  printf 'ANTHROPIC_CUSTOM_HEADERS=%q\n' "anthropic-workspace-id: wrkspc_test" >> "$d/home/.jobdesk/secrets.env"
   env_of() {  # the server's env, as dmg_server_env sets it up
     HOME="$d/home" JOBDESK_SOURCE_ONLY=1 "$BASH" -c '. "$1"; dmg_server_env; env' _ "$d/home/.jobdesk/bin/jobdesk"
   }
   expect_true "the key reaches the server" sh -c 'grep -qx "ANTHROPIC_API_KEY=sk-ant-test key"' < <(env_of)
+  case "$(env_of)" in *"ANTHROPIC_CUSTOM_HEADERS=anthropic-workspace-id: wrkspc_test"*) pass ;; *) fail "the workspace header reaches the server" ;; esac
   case "$(env_of)" in *"PLAYWRIGHT_BROWSERS_PATH=$d/home/.jobdesk/browsers"*) pass ;; *) fail "the PDF browser path reaches the server" ;; esac
   case "$(env_of)" in *"CLAUDE_CONFIG_DIR=$d/home/.jobdesk/claude"*) pass ;; *) fail "Claude keeps its settings inside JobDesk's folder" ;; esac
   case "$(env_of)" in *"DISABLE_AUTOUPDATER=1"*) pass ;; *) fail "Claude never updates itself in the DMG edition" ;; esac

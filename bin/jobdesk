@@ -313,6 +313,8 @@ dmg_server_env() {
     # shellcheck source=/dev/null
     . "$SECRETS_FILE"
     [ -n "${ANTHROPIC_API_KEY:-}" ] && export ANTHROPIC_API_KEY
+    # A key that isn't scoped to a workspace has to name one on every request.
+    [ -n "${ANTHROPIC_CUSTOM_HEADERS:-}" ] && export ANTHROPIC_CUSTOM_HEADERS
   fi
   [ -d "$BROWSERS_DIR" ] && export PLAYWRIGHT_BROWSERS_PATH="$BROWSERS_DIR"
   if [ "$JOBDESK_EDITION" = dmg ]; then

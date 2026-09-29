@@ -19,6 +19,8 @@
 # Usage: tools/build-dmg.sh [--career-ops=X.Y.Z] [--out=DIR] [--key-service=NAME]
 #                           [--key-file=PATH] [--no-key] [--test-home=DIR]
 #   --key-file=PATH  read the key from a file instead (tests use a fake one)
+#   --workspace-id=wrkspc_…  for a key that isn't scoped to a workspace: every
+#                    request then has to name one (Console → Settings → Workspaces)
 #   --no-key         build without a Claude key (testing)
 #   --test-home=DIR  the app sets up in DIR instead of the real home (testing)
 #
@@ -31,6 +33,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT="$ROOT/dist"
 KEY_SERVICE=jobdesk-anthropic-api-key
 KEY_FILE=""
+WORKSPACE_ID=""
 NO_KEY=0
 TEST_HOME=""
 CO_VERSION=""
@@ -45,9 +48,10 @@ for arg in "$@"; do
     --out=*) OUT="${arg#--out=}" ;;
     --key-service=*) KEY_SERVICE="${arg#--key-service=}" ;;
     --key-file=*) KEY_FILE="${arg#--key-file=}" ;;
+    --workspace-id=*) WORKSPACE_ID="${arg#--workspace-id=}" ;;
     --no-key) NO_KEY=1 ;;
     --test-home=*) TEST_HOME="${arg#--test-home=}" ;;
-    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -76,6 +80,10 @@ if [ "$NO_KEY" = 0 ] && [ -n "$KEY_FILE" ]; then
 elif [ "$NO_KEY" = 0 ]; then
   KEY=$(security find-generic-password -s "$KEY_SERVICE" -w 2>/dev/null) ||
     die "No Claude key in the Keychain under '$KEY_SERVICE'. Add one (see the top of this script), or pass --no-key."
+  case "$WORKSPACE_ID" in
+    ''|wrkspc_*) ;;
+    *) die "--workspace-id should look like wrkspc_… (Console → Settings → Workspaces)." ;;
+  esac
   case "$KEY" in
     sk-ant-*) ;;
     *) die "The Keychain item '$KEY_SERVICE' doesn't look like an Anthropic API key (sk-ant-...)." ;;
@@ -188,7 +196,13 @@ chmod 755 "$PAY/jobdesk/bin/jobdesk" "$PAY/jobdesk/shims/git"
 BUILD_ID="$VERSION career-ops-$CO_VERSION node-$NODE_VERSION claude-$CLAUDE_VERSION $(date -u +%Y%m%dT%H%M%SZ)"
 printf '%s\n' "$BUILD_ID" > "$PAY/build-id"
 if [ -n "$KEY" ]; then
-  ( umask 077 && printf 'ANTHROPIC_API_KEY=%q\n' "$KEY" > "$PAY/secrets.env" )
+  (
+    umask 077
+    printf 'ANTHROPIC_API_KEY=%q\n' "$KEY" > "$PAY/secrets.env"
+    if [ -n "$WORKSPACE_ID" ]; then
+      printf 'ANTHROPIC_CUSTOM_HEADERS=%q\n' "anthropic-workspace-id: $WORKSPACE_ID" >> "$PAY/secrets.env"
+    fi
+  )
 fi
 KEY=""
 
