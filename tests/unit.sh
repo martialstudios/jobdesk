@@ -127,7 +127,11 @@ printf 'bash %s\n' "$BASH_VERSION"
   a=$(TZ=Asia/Tokyo proc_start $$)
   b=$(exec 2>/dev/null; TZ=UTC LC_ALL=de_DE.UTF-8 LANG=de_DE.UTF-8 proc_start $$)
   expect_eq "proc_start is TZ/locale independent" "$a" "$b"
-  case "$a" in ''|*[!\ -~]*) fail "proc_start format: [$a]" ;; *) pass ;; esac
+  # Spelled out: a range like [ -~] collates by locale (en_US.UTF-8 rejects ASCII).
+  case "$a" in
+    ''|*[!\ :0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]*) fail "proc_start format: [$a]" ;;
+    *) pass ;;
+  esac
 
   # latest_release_tag sorts versions numerically and ignores other tags.
   mkdir -p "$SCRATCH/fakebin"
