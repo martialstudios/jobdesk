@@ -1,0 +1,94 @@
+#!/bin/bash
+# JobDesk.app's launcher (DMG edition), in Contents/Resources. The applet
+# (macos/JobDeskDMG.applescript) calls it for everything:
+#
+#   launch where          ok | dmg (running from the disk image) | translocated
+#   launch needs-setup    yes | no: is ~/.jobdesk set up from this very build?
+#   launch setup-start    start macos/dmg-setup.sh in the background
+#   launch setup-status   PERCENT|what, done|, or failed|message
+#   launch <anything>     passed to ~/.jobdesk/bin/jobdesk (open, alive, stop…)
+#
+# bash 3.2 and BSD tools only.
+
+set -u
+
+# `do shell script` runs with a minimal environment.
+if [ -z "${HOME:-}" ]; then
+  HOME=$(cd ~ 2>/dev/null && pwd)
+fi
+RES=$(cd "$(dirname "$0")" && pwd)
+# Test builds only (tools/build-dmg.sh --test-home): a throwaway home.
+if [ -f "$RES/test-home" ]; then
+  HOME=$(cat "$RES/test-home")
+fi
+export HOME
+APP=$(cd "$RES/../.." && pwd)
+PAYLOAD="$RES/payload"
+JOBDESK_HOME="$HOME/.jobdesk"
+J="$JOBDESK_HOME/bin/jobdesk"
+tmp_root=${TMPDIR:-/tmp}
+STATUS="${tmp_root%/}/jobdesk-setup.status"
+SETUP_PID="$STATUS.pid"
+
+pid_alive() {
+  local pid
+  pid=$(cat "$SETUP_PID" 2>/dev/null)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null
+}
+
+case "${1:-}" in
+  where)
+    case "$APP" in
+      /Volumes/*) printf 'dmg' ;;
+      */AppTranslocation/*) printf 'translocated' ;;
+      *) printf 'ok' ;;
+    esac
+    ;;
+  needs-setup)
+    if [ -x "$J" ] && [ -f "$PAYLOAD/build-id" ] &&
+       [ "$(cat "$JOBDESK_HOME/.dmg-build" 2>/dev/null)" = "$(cat "$PAYLOAD/build-id")" ]; then
+      printf 'no'
+    else
+      printf 'yes'
+    fi
+    ;;
+  setup-start)
+    # A setup that's already running (the app opened twice) is left to finish.
+    pid_alive && exit 0
+    printf '0|Starting\n' > "$STATUS"
+    nohup /bin/bash "$PAYLOAD/jobdesk/macos/dmg-setup.sh" "$PAYLOAD" "$APP" "$STATUS" \
+      > "${tmp_root%/}/jobdesk-setup.out" 2>&1 < /dev/null &
+    printf '%s\n' "$!" > "$SETUP_PID"
+    ;;
+  setup-status)
+    s=$(cat "$STATUS" 2>/dev/null)
+    case "$s" in
+      done\|*|failed\|*) printf '%s' "$s" ;;
+      *)
+        if pid_alive; then
+          printf '%s' "${s:-0|Starting}"
+        else
+          # One last look: it may have finished between the two reads.
+          s=$(cat "$STATUS" 2>/dev/null)
+          case "$s" in
+            done\|*|failed\|*) printf '%s' "$s" ;;
+            *) printf 'failed|JobDesk'"'"'s setup stopped unexpectedly.' ;;
+          esac
+        fi
+        ;;
+    esac
+    ;;
+  logs)
+    # Setup can fail before bin/jobdesk exists; its log is still there.
+    if [ ! -x "$J" ]; then
+      [ -f "$JOBDESK_HOME/logs/install.log" ] && open -R "$JOBDESK_HOME/logs/install.log"
+      exit 0
+    fi
+    exec "$J" "$@"
+    ;;
+  *)
+    [ -x "$J" ] || { printf 'JobDesk isn'"'"'t set up yet. Open it again to finish setting up.\n' >&2; exit 1; }
+    exec "$J" "$@"
+    ;;
+esac

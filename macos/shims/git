@@ -1,0 +1,13 @@
+#!/bin/bash
+# JobDesk's git (DMG edition): first on the web UI's PATH. On a Mac without
+# Apple's developer tools, /usr/bin/git is a stub that pops up an "install the
+# command line developer tools" dialog every time anything calls it; career-ops
+# and Claude Code only ask git optional questions, so answer "no git" instead.
+if /usr/bin/xcode-select -p >/dev/null 2>&1; then
+  exec /usr/bin/git "$@"
+fi
+for g in /opt/homebrew/bin/git /usr/local/bin/git; do
+  [ -x "$g" ] && exec "$g" "$@"
+done
+printf 'git: not installed (JobDesk runs without it)\n' >&2
+exit 127

@@ -1068,8 +1068,23 @@ place_app() {
   mv "$1" "$app"
 }
 
+# brand_app APP: JobDesk's icon, name, bundle id and version on a freshly
+# compiled applet. Also used by tools/build-dmg.sh; sign afterwards.
+brand_app() {
+  local plist="$1/Contents/Info.plist"
+  cp "$SRC_DIR/assets/JobDesk.icns" "$1/Contents/Resources/applet.icns"
+  # Newer osacompile adds an asset-catalog icon that would win over ours.
+  rm -f "$1/Contents/Resources/Assets.car"
+  plutil -remove CFBundleIconName "$plist" >/dev/null 2>&1 || true
+  plutil -replace CFBundleIconFile -string applet "$plist"
+  plutil -replace CFBundleIdentifier -string "$APP_BUNDLE_ID" "$plist"
+  plutil -replace CFBundleName -string JobDesk "$plist"
+  plutil -replace CFBundleShortVersionString -string "$JOBDESK_VERSION" "$plist"
+  plutil -replace NSHumanReadableCopyright -string "Opens the career-ops web UI. Not affiliated with career-ops." "$plist"
+}
+
 build_app() {
-  local apps app tmp_app script bin="$JOBDESK_HOME/bin/jobdesk" plist old_dir=""
+  local apps app tmp_app script bin="$JOBDESK_HOME/bin/jobdesk" old_dir=""
   [ "$PLATFORM" = darwin ] || return 0
   step "The JobDesk app"
   if ! command -v osacompile >/dev/null 2>&1; then
@@ -1092,19 +1107,9 @@ build_app() {
   tmp_app="$WORK_DIR/JobDesk.app"
   sed "s#__JOBDESK_BIN__#$bin#" "$SRC_DIR/macos/JobDesk.applescript" > "$script"
   osacompile -s -o "$tmp_app" "$script" >> "$LOG_FILE" 2>&1 || die "Couldn't build JobDesk.app (see the log)."
-
-  plist="$tmp_app/Contents/Info.plist"
-  cp "$SRC_DIR/assets/JobDesk.icns" "$tmp_app/Contents/Resources/applet.icns"
-  # Newer osacompile adds an asset-catalog icon that would win over ours.
-  rm -f "$tmp_app/Contents/Resources/Assets.car"
-  plutil -remove CFBundleIconName "$plist" >/dev/null 2>&1 || true
-  plutil -replace CFBundleIconFile -string applet "$plist"
-  plutil -replace CFBundleIdentifier -string "$APP_BUNDLE_ID" "$plist"
-  plutil -replace CFBundleName -string JobDesk "$plist"
-  plutil -replace CFBundleShortVersionString -string "$JOBDESK_VERSION" "$plist"
-  plutil -replace NSHumanReadableCopyright -string "Opens the career-ops web UI. Not affiliated with career-ops." "$plist"
+  brand_app "$tmp_app"
   # Built on this Mac, so Gatekeeper never quarantines it; an ad-hoc signature
-  # keeps the bundle's seal valid after the edits above.
+  # keeps the bundle's seal valid after brand_app's edits.
   codesign --force --deep --sign - "$tmp_app" >> "$LOG_FILE" 2>&1 ||
     warn "Couldn't sign JobDesk.app; it should still open."
 
@@ -1142,6 +1147,7 @@ write_config() {
     printf 'JOBDESK_PORT=%q\n' "$PORT"
     printf 'JOBDESK_AI=%q\n' "$AI"
     printf 'JOBDESK_APP=%q\n' "$APP_PATH"
+    if [ -n "${EDITION:-}" ]; then printf 'JOBDESK_EDITION=%q\n' "$EDITION"; fi
   } > "$tmp" || ! mv -f "$tmp" "$JOBDESK_HOME/config.env"; then
     die "Couldn't save JobDesk's settings."
   fi

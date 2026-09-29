@@ -397,6 +397,98 @@ EOF
   [ "$FAILED" = 0 ]
 ) || FAILED=$(( FAILED + 1 ))
 
+# ── DMG edition: server env, launcher, setup config ───────────────────────
+(
+  PASSED=0
+  FAILED=0
+  d="$SCRATCH/dmg"
+  mkdir -p "$d/home/.jobdesk/bin" "$d/home/.jobdesk/shims" "$d/home/.jobdesk/browsers"
+  cp "$ROOT/bin/jobdesk" "$d/home/.jobdesk/bin/jobdesk"
+  : > "$d/home/.jobdesk/.jobdesk-home"
+  printf 'JOBDESK_EDITION=dmg\n' > "$d/home/.jobdesk/config.env"
+  printf 'ANTHROPIC_API_KEY=%q\n' "sk-ant-test key" > "$d/home/.jobdesk/secrets.env"
+  env_of() {  # the server's env, as dmg_server_env sets it up
+    HOME="$d/home" JOBDESK_SOURCE_ONLY=1 "$BASH" -c '. "$1"; dmg_server_env; env' _ "$d/home/.jobdesk/bin/jobdesk"
+  }
+  expect_true "the key reaches the server" sh -c 'grep -qx "ANTHROPIC_API_KEY=sk-ant-test key"' < <(env_of)
+  case "$(env_of)" in *"PLAYWRIGHT_BROWSERS_PATH=$d/home/.jobdesk/browsers"*) pass ;; *) fail "the PDF browser path reaches the server" ;; esac
+  case "$(env_of)" in *"CLAUDE_CONFIG_DIR=$d/home/.jobdesk/claude"*) pass ;; *) fail "Claude keeps its settings inside JobDesk's folder" ;; esac
+  case "$(env_of)" in *"DISABLE_AUTOUPDATER=1"*) pass ;; *) fail "Claude never updates itself in the DMG edition" ;; esac
+  got=$(HOME="$d/home" JOBDESK_SOURCE_ONLY=1 "$BASH" -c '. "$1"; server_path' _ "$d/home/.jobdesk/bin/jobdesk")
+  case "$got" in "$d/home/.jobdesk/shims:"*) pass ;; *) fail "shims come first on the server's PATH: $got" ;; esac
+
+  # The Terminal edition has none of it.
+  t="$SCRATCH/dmg-terminal"
+  mkdir -p "$t/home/.jobdesk/bin"
+  cp "$ROOT/bin/jobdesk" "$t/home/.jobdesk/bin/jobdesk"
+  : > "$t/home/.jobdesk/.jobdesk-home"
+  got=$(HOME="$t/home" ANTHROPIC_API_KEY='' CLAUDE_CONFIG_DIR='' JOBDESK_SOURCE_ONLY=1 "$BASH" -c '. "$1"; dmg_server_env; printf "%s|%s|%s" "${ANTHROPIC_API_KEY:-}" "${CLAUDE_CONFIG_DIR:-}" "$(server_path)"' _ "$t/home/.jobdesk/bin/jobdesk")
+  case "$got" in "||$t/home/.jobdesk/node/bin:"*) pass ;; *) fail "Terminal edition: no key, no Claude dir, no shims: $got" ;; esac
+
+  # `update` and `login` point a DMG user at the DMG, and change nothing.
+  got=$(HOME="$d/home" "$BASH" "$d/home/.jobdesk/bin/jobdesk" update 2>&1)
+  expect_eq "DMG update exits 0" "$?" 0
+  case "$got" in *"JobDesk.dmg"*) pass ;; *) fail "DMG update explains itself: $got" ;; esac
+  got=$(HOME="$d/home" "$BASH" "$d/home/.jobdesk/bin/jobdesk" login 2>&1 < /dev/null)
+  expect_eq "DMG login exits 0" "$?" 0
+
+  # write_config: the edition line only when there is one.
+  (
+    PASSED=0
+    FAILED=0
+    export HOME="$d/cfg"
+    mkdir -p "$HOME/.jobdesk"
+    # shellcheck source=../install.sh
+    JOBDESK_SOURCE_ONLY=1 . "$ROOT/install.sh"
+    JOBDESK_HOME="$HOME/.jobdesk" CAREER_OPS_DIR="$HOME/career-ops" PORT=4788 AI=claude APP_PATH=/Applications/JobDesk.app
+    EDITION=""
+    ( write_config ) >/dev/null 2>&1
+    expect_eq "write_config without an edition succeeds" "$?" 0
+    expect_false "...and writes no edition" grep -q JOBDESK_EDITION "$JOBDESK_HOME/config.env"
+    EDITION=dmg
+    ( write_config ) >/dev/null 2>&1
+    expect_eq "write_config with an edition succeeds" "$?" 0
+    expect_true "...and records it" grep -qx 'JOBDESK_EDITION=dmg' "$JOBDESK_HOME/config.env"
+    printf '%s %s\n' "$PASSED" "$FAILED" > "$d/cfg.result"
+  )
+  read -r p f < "$d/cfg.result"
+  PASSED=$(( PASSED + p )); FAILED=$(( FAILED + f ))
+
+  # The launcher, in a fake app with a test home.
+  app="$d/Apps/JobDesk.app"
+  res="$app/Contents/Resources"
+  mkdir -p "$res/payload" "$d/lhome" "$d/tmp"
+  cp "$ROOT/macos/dmg/launch" "$res/launch"
+  printf '%s\n' "$d/lhome" > "$res/test-home"
+  printf 'build-1\n' > "$res/payload/build-id"
+  L() { TMPDIR="$d/tmp" "$BASH" "$res/launch" "$@"; }
+  expect_eq "launcher: an app in a normal folder" "$(L where)" ok
+  expect_eq "launcher: nothing set up yet" "$(L needs-setup)" yes
+  mkdir -p "$d/lhome/.jobdesk/bin"
+  printf '#!/bin/bash\nprintf "ran:%%s" "$*"\n' > "$d/lhome/.jobdesk/bin/jobdesk"
+  chmod 755 "$d/lhome/.jobdesk/bin/jobdesk"
+  printf 'build-0\n' > "$d/lhome/.jobdesk/.dmg-build"
+  expect_eq "launcher: set up from an older build" "$(L needs-setup)" yes
+  printf 'build-1\n' > "$d/lhome/.jobdesk/.dmg-build"
+  expect_eq "launcher: set up from this build" "$(L needs-setup)" no
+  expect_eq "launcher: passes commands to jobdesk" "$(L alive)" "ran:alive"
+  printf '40|Unpacking\n' > "$d/tmp/jobdesk-setup.status"
+  rm -f "$d/tmp/jobdesk-setup.status.pid"
+  case "$(L setup-status)" in failed\|*) pass ;; *) fail "launcher: a setup that died reports failure" ;; esac
+  sleep 30 &
+  printf '%s\n' "$!" > "$d/tmp/jobdesk-setup.status.pid"
+  expect_eq "launcher: a running setup reports progress" "$(L setup-status)" "40|Unpacking"
+  kill "$!" 2>/dev/null
+  wait "$!" 2>/dev/null
+  printf 'done|\n' > "$d/tmp/jobdesk-setup.status"
+  expect_eq "launcher: a finished setup" "$(L setup-status)" "done|"
+  got=$(HOME="$d/lhome" TMPDIR="$d/tmp" "$BASH" -c 'unset HOME; "$BASH" "$1" where' _ "$res/launch")
+  expect_eq "launcher: works with no HOME (do shell script)" "$got" ok
+
+  printf 'DMG edition: %s passed, %s failed\n' "$PASSED" "$FAILED"
+  [ "$FAILED" = 0 ]
+) || FAILED=$(( FAILED + 1 ))
+
 if [ "$FAILED" = 0 ]; then
   printf 'All unit tests passed.\n'
 else
