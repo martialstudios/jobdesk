@@ -512,9 +512,11 @@ cmd_login() {
 }
 
 cmd_update() {
-  local dir url rc
+  local dir url rc tmp_root
   # A private folder: nothing another user put in /tmp can ride along.
-  dir=$(mktemp -d "${TMPDIR:-/tmp}/jobdesk-update.XXXXXX") || die "Couldn't create a temp folder."
+  # macOS's $TMPDIR ends in "/"; drop it so paths never carry "//".
+  tmp_root=${TMPDIR:-/tmp}
+  dir=$(mktemp -d "${tmp_root%/}/jobdesk-update.XXXXXX") || die "Couldn't create a temp folder."
   url="https://raw.githubusercontent.com/$JOBDESK_REPO/$JOBDESK_REF/install.sh"
   say "Downloading the latest JobDesk installer..."
   if ! curl -fsSL "$url" -o "$dir/install.sh"; then

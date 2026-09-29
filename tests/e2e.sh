@@ -12,7 +12,8 @@ set -o pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SHELL_UNDER_TEST="$BASH"
-HOME=$(mktemp -d "${TMPDIR:-/tmp}/jobdesk-e2e.XXXXXX")
+TMP_ROOT=${TMPDIR:-/tmp}   # macOS's ends in "/"
+HOME=$(mktemp -d "${TMP_ROOT%/}/jobdesk-e2e.XXXXXX")
 export HOME
 J="$HOME/.jobdesk/bin/jobdesk"
 APP=""

@@ -1193,6 +1193,7 @@ finish() {
 }
 
 main() {
+  local tmp_root
   parse_args "$@"
   setup_colors
   if [ "$OPT_UPDATE" = 1 ]; then
@@ -1211,7 +1212,9 @@ main() {
     mv -f "$LOG_FILE" "$LOG_FILE.1"
   fi
   log "==== JobDesk installer ($*) on $PLATFORM-$ARCH"
-  WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/jobdesk.XXXXXX") || die "Couldn't create a temp folder."
+  # macOS's $TMPDIR ends in "/"; drop it so paths never carry "//".
+  tmp_root=${TMPDIR:-/tmp}
+  WORK_DIR=$(mktemp -d "${tmp_root%/}/jobdesk.XXXXXX") || die "Couldn't create a temp folder."
   trap cleanup EXIT
   acquire_lock
 

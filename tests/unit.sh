@@ -12,7 +12,9 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 PASSED=0
 FAILED=0
-SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/jobdesk-unit.XXXXXX")
+# macOS's $TMPDIR ends in "/"; drop it so expected paths match normalized ones.
+TMP_ROOT=${TMPDIR:-/tmp}
+SCRATCH=$(mktemp -d "${TMP_ROOT%/}/jobdesk-unit.XXXXXX")
 trap 'rm -rf "$SCRATCH"' EXIT
 
 pass() { PASSED=$(( PASSED + 1 )); }
