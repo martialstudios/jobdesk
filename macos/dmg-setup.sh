@@ -127,6 +127,21 @@ setup_career_ops() {
   FRESH_CAREER_OPS=1
 }
 
+# career-ops (1.35+) won't evaluate a job until its setup files exist. Two of
+# them are its own templates, so start them here; only ever created, never
+# replaced (they're the user's to edit). The profile itself starts from the CV.
+setup_starter_files() {
+  local dir="$CAREER_OPS_DIR" pair from to
+  for pair in "modes/_profile.template.md:modes/_profile.md" "templates/portals.example.yml:portals.yml"; do
+    from="$dir/${pair%%:*}"
+    to="$dir/${pair#*:}"
+    if [ -f "$from" ] && [ ! -e "$to" ]; then
+      cp "$from" "$to" || die "Couldn't set up $(basename "$to")."
+      log "started $to from ${pair%%:*}"
+    fi
+  done
+}
+
 setup_shims() {
   mkdir -p "$JOBDESK_HOME/shims"
   if ! { cp "$SRC_DIR/shims/git" "$JOBDESK_HOME/shims/.git.new" &&
@@ -208,6 +223,7 @@ main_dmg() {
   setup_ui
   status 85 "Setting up your job search folder"
   setup_career_ops
+  setup_starter_files
   status 92 "Finishing"
   setup_shims
   install_jobdesk_files > /dev/null

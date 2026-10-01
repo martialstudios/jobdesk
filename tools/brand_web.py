@@ -15,7 +15,9 @@ What it does, before `npm run build`:
   longer name, the version pill with its "Report a bug" link is left out;
 - the assistant introduces itself by BRAND_NAME;
 - the CV box gets BRAND_CV_PLACEHOLDER, skips its review step, and drives the
-  JobdeskFun overlay (ui/brand/jobdesk-fun.tsx) until the first results.
+  JobdeskFun overlay (ui/brand/jobdesk-fun.tsx) until the first results;
+- a "Your next step" card (ui/brand/jobdesk-guide.tsx) walks from a job to
+  its score, its tailored CV, and Apply.
 
 Every targeted edit must find its anchor, or this exits 1: a career-ops update
 that moves things fails the build instead of shipping a half-branded app.
@@ -94,10 +96,11 @@ def main():
          "relative -top-px text-xl text-landing", "relative text-base leading-tight text-landing")
     # The version pill + "Report a bug" (a career-ops GitHub link) stays out,
     # and the overlay goes in.
-    edit(web, "src/components/app-shell.tsx", "        <BetaBanner />\n", "        <JobdeskFun />\n")
+    edit(web, "src/components/app-shell.tsx", "        <BetaBanner />\n",
+         "        <JobdeskFun />\n        <JobdeskGuide />\n")
     edit(web, "src/components/app-shell.tsx",
          'import { BetaBanner } from "@/components/beta/beta-banner";',
-         'import { JobdeskFun } from "@/components/jobdesk-fun";')
+         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { JobdeskGuide } from "@/components/jobdesk-guide";')
     # The logo: the JobDesk icon instead of "co".
     comark = os.path.join(web, "src/components/co-mark.tsx")
     with open(comark, encoding="utf-8") as f:
@@ -167,6 +170,24 @@ def main():
     with open(pipe, "w", encoding="utf-8") as f:
         f.write(s2)
 
+    # career-ops (1.35+) won't evaluate a job until config/profile.yml exists.
+    # Start it from the CV with career-ops's own merge-safe writer (/api/profile,
+    # what the assistant's setProfile uses): name, email, location, target roles.
+    edit(web, cv, "    onSaved?.();\n", '''    try {
+      const who = md.match(/^#\\s*(?:CV\\s*[-—–:]+\\s*)?(.+)$/m)?.[1]?.trim();
+      const email = md.match(/[\\w.+-]+@[\\w-]+\\.[\\w.-]+/)?.[0];
+      const roles = seed?.roles?.length ? seed.roles : seed?.title ? [seed.title] : undefined;
+      await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: who, email, location: seed?.location || undefined, roles }),
+      });
+    } catch {
+      /* the assistant can still set it up */
+    }
+    onSaved?.();
+''')
+
     # The first scan's end, whatever it found: the overlay's cue.
     edit(web, "src/components/explore/explore-provider.tsx",
          '  const [phase, setPhase] = useState<Phase>("idle");\n',
@@ -210,8 +231,9 @@ def main():
     edit(web, "public/jobdesk-start.html", "<title>JobDesk</title>", f"<title>{name}</title>")
 
     # 2. The overlay and its settings.
-    shutil.copyfile(os.path.join(ROOT, "ui", "brand", "jobdesk-fun.tsx"),
-                    os.path.join(web, "src", "components", "jobdesk-fun.tsx"))
+    for component in ("jobdesk-fun.tsx", "jobdesk-guide.tsx"):
+        shutil.copyfile(os.path.join(ROOT, "ui", "brand", component),
+                        os.path.join(web, "src", "components", component))
     try:
         dots = json.loads(os.environ.get("BRAND_FUN_DOTS", "[]"))
     except ValueError as e:
