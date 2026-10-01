@@ -369,6 +369,29 @@ EOF
   expect_true "folder stays marked, so reinstalling works" test -f "$u/home/.jobdesk/.jobdesk-home"
   expect_eq "career-ops data kept" "$(cat "$u/home/career-ops/cv.md" 2>/dev/null)" "MY CV"
 
+  # ...and on a Mac, quits and removes a branded app (any name) while it runs.
+  if [ "$(uname -s)" = Darwin ]; then
+    b="$SCRATCH/uninst-brand"
+    app="$b/Apps/Test's (Brand)+ App.app"
+    mkdir -p "$b/home/.jobdesk/bin" "$app/Contents/MacOS"
+    cp "$ROOT/bin/jobdesk" "$b/home/.jobdesk/bin/jobdesk"
+    : > "$b/home/.jobdesk/.jobdesk-home"
+    plutil -create xml1 "$app/Contents/Info.plist"
+    plutil -insert CFBundleIdentifier -string com.martialstudios.jobdesk "$app/Contents/Info.plist"
+    # A real process whose command line is the app's executable path.
+    "$BASH" -c 'exec -a "$0" sleep 60' "$app/Contents/MacOS/applet" &
+    bpid=$!
+    { printf 'JOBDESK_CAREER_OPS_DIR=%s\n' "$b/home/career-ops"
+      printf 'JOBDESK_APP=%q\n' "$app"; } > "$b/home/.jobdesk/config.env"
+    HOME="$b/home" "$BASH" "$b/home/.jobdesk/bin/jobdesk" uninstall --yes >/dev/null 2>&1
+    expect_eq "uninstall exit with a branded app" "$?" 0
+    expect_false "branded app removed" test -e "$app"
+    sleep 0.5
+    expect_false "branded app's process quit" kill -0 "$bpid" 2>/dev/null
+    kill "$bpid" 2>/dev/null
+    wait "$bpid" 2>/dev/null
+  fi
+
   # ...refuses when career-ops lives inside JobDesk's folder...
   v="$SCRATCH/uninst2"
   mkdir -p "$v/home/.jobdesk/bin" "$v/home/.jobdesk/career-ops"

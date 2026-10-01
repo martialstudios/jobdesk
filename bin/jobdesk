@@ -667,6 +667,11 @@ cmd_uninstall() {
       kill -TERM "$pid" 2>/dev/null
     done
     if [ -n "$JOBDESK_APP" ] && is_jobdesk_app "$JOBDESK_APP"; then
+      # A branded build has its own name, so the pattern above misses it.
+      # Matched literally: a brand name can hold regex characters.
+      ps -axo pid=,command= 2>/dev/null | while read -r pid cmd; do
+        case "$cmd" in "$JOBDESK_APP/Contents/MacOS/"*) kill -TERM "$pid" 2>/dev/null ;; esac
+      done
       rm -rf "$JOBDESK_APP"
       say "Removed $JOBDESK_APP"
     fi
