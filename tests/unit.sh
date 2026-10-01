@@ -451,7 +451,7 @@ EOF
   expect_eq "open: no AI chosen, no start page" "$(ot none /pipeline)" "http://127.0.0.1:4788/pipeline"
 
   # Uninstall recognizes JobDesk's app by name, or a renamed (branded) one by bundle id.
-  # shellcheck disable=SC2329  # called through expect_true/expect_false
+  # shellcheck disable=SC2317,SC2329  # called through expect_true/expect_false
   is_app() { JOBDESK_SOURCE_ONLY=1 "$BASH" -c '. "$1"; is_jobdesk_app "$2"' _ "$d/home/.jobdesk/bin/jobdesk" "$1"; }
   mkdir -p "$d/apps/JobDesk.app/Contents" "$d/apps/Other.app/Contents" "$d/apps/NotAnApp"
   expect_true "JobDesk.app is JobDesk's" is_app "$d/apps/JobDesk.app"
