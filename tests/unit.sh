@@ -371,19 +371,19 @@ EOF
 
   # ...and on a Mac, quits and removes a branded app (any name) while it runs.
   if [ "$(uname -s)" = Darwin ]; then
-    b="$SCRATCH/uninst-brand"
-    app="$b/Apps/Test's (Brand)+ App.app"
-    mkdir -p "$b/home/.jobdesk/bin" "$app/Contents/MacOS"
-    cp "$ROOT/bin/jobdesk" "$b/home/.jobdesk/bin/jobdesk"
-    : > "$b/home/.jobdesk/.jobdesk-home"
+    ub="$SCRATCH/uninst-brand"
+    app="$ub/Apps/Test's (Brand)+ App.app"
+    mkdir -p "$ub/home/.jobdesk/bin" "$app/Contents/MacOS"
+    cp "$ROOT/bin/jobdesk" "$ub/home/.jobdesk/bin/jobdesk"
+    : > "$ub/home/.jobdesk/.jobdesk-home"
     plutil -create xml1 "$app/Contents/Info.plist"
     plutil -insert CFBundleIdentifier -string com.martialstudios.jobdesk "$app/Contents/Info.plist"
     # A real process whose command line is the app's executable path.
     "$BASH" -c 'exec -a "$0" sleep 60' "$app/Contents/MacOS/applet" &
     bpid=$!
-    { printf 'JOBDESK_CAREER_OPS_DIR=%s\n' "$b/home/career-ops"
-      printf 'JOBDESK_APP=%q\n' "$app"; } > "$b/home/.jobdesk/config.env"
-    HOME="$b/home" "$BASH" "$b/home/.jobdesk/bin/jobdesk" uninstall --yes >/dev/null 2>&1
+    { printf 'JOBDESK_CAREER_OPS_DIR=%s\n' "$ub/home/career-ops"
+      printf 'JOBDESK_APP=%q\n' "$app"; } > "$ub/home/.jobdesk/config.env"
+    HOME="$ub/home" "$BASH" "$ub/home/.jobdesk/bin/jobdesk" uninstall --yes >/dev/null 2>&1
     expect_eq "uninstall exit with a branded app" "$?" 0
     expect_false "branded app removed" test -e "$app"
     sleep 0.5
