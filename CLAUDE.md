@@ -265,16 +265,41 @@ it lives only on the owner's Mac.
   name, every applet dialog: the build substitutes "JobDesk" in the
   AppleScript's strings, so no handler name may contain "JobDesk"), the disk
   image name, and the picture guide (`make_dmg_guide.py --name --from`).
-- **"Your next step" card** (`ui/brand/jobdesk-guide.tsx`, 2026-10-01).
-  career-ops can score a job, tailor her CV and pre-fill the application, but
-  nothing said which comes next, and Apply stays locked until a tailored CV
-  exists.
-  - The card shows ① Score → ② Tailored CV → ③ Apply, using running jobs
-    (`useJobs`), the tracker (`/api/pipeline`, where the PDF column is ✅/❌),
-    and, on `/pipeline/<n>`, the page's own buttons. Its buttons only press
-    the page's own buttons.
-  - Verified end to end: Evaluate → "See my score" → "Make my tailored CV"
-    (PDF in about 2 min) → Apply unlocked.
+- **Simple screens** (`ui/brand/web/src`, 2026-10-01; replace the "next step"
+  card from PR #5). The owner's non-technical test: evaluation as the focal
+  point was slow and cluttered, YAML and Markdown were everywhere, and there
+  was no way to act on many jobs at once.
+  - They are new files only; `brand_web.py` refuses to overwrite career-ops's.
+    career-ops's own screens stay reachable under **Advanced**.
+  - **Find jobs** (`/find`, home once there's a resume; `/` redirects there).
+    career-ops's free scan, best fits first (by career-ops's own title-vs-profile
+    `fit` band), "only near <city> or remote" on by default (falls back to all
+    when fewer than 5), a checkbox per job, "Add to my list" or "Add and score
+    them".
+  - **My list** (`/my-list`, stored in `.career-ops-web/jobdesk-list.json`).
+    - **Apply to these** walks through the jobs one at a time: career-ops's
+      apply opens the real form pre-filled, she submits it herself, then
+      "I submitted it, next" (also sets the tracker to Applied when it was
+      scored).
+    - **Score / Tailor for a group** goes through `components/jobdesk/tasks.tsx`:
+      a localStorage queue worked through by career-ops's own `startJob`, 2
+      scorings and 1 tailoring at a time. Tailoring needs a score first.
+  - **Job page** (`/job/<n>`) leads with an encouraging match label
+    (`match.ts`: Great ≥4.0, Good ≥3.3, Worth a shot ≥2.5, else Stretch role;
+    the real number is only inside "Read why"), then where you shine (the
+    report's `top_strengths`), how to make your application stronger (section
+    E's customization plan), and what they ask for that the resume doesn't
+    show yet (`hard_stops`), plus the cover letter draft. Owner's ask: never a
+    bare "1/5". Don't inflate numbers; the framing does the encouraging.
+  - **My resume** (`/resume`) shows the resume as a document, with four
+    actions: **Edit** (a form; bullets shown as •, and lines left unchanged
+    keep their exact Markdown), **Ask for a change** (`/api/jobdesk/cv-change`,
+    Claude returns a full revision to approve; nothing saves without
+    approval), **Upload a new one** (career-ops's CvIngest), and **Download
+    PDF** (`lib/jobdesk/resume-pdf.ts`).
+  - **Apply attaches her own resume** when there's no tailored CV:
+    `/api/apply/fill` falls back to `resumePdf()`, which renders cv.md with
+    career-ops's Playwright and is cached until cv.md changes.
 - **Profile from the CV.** career-ops 1.35 refuses to evaluate until
   `config/profile.yml`, `modes/_profile.md` and `portals.yml` exist: the
   evaluation agent stops with "setup isn't finished"; 1.34 only warned.

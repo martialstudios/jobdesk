@@ -163,8 +163,10 @@ if [ -n "$BRAND_FILE" ]; then
   say "Branding it: $APP_NAME"
   python3 "$ROOT/tools/brand_web.py" "$UI/web" "$ROOT/assets/JobDesk.png" || die "Couldn't brand the web UI (see above)."
 fi
-( cd "$UI/web" && npm ci --no-audit --no-fund && npm run build && npm prune --omit=dev --no-audit --no-fund ) >> "$LOG" 2>&1 ||
-  die "The web UI didn't build (see $LOG)."
+if ! ( cd "$UI/web" && npm ci --no-audit --no-fund && npm run build && npm prune --omit=dev --no-audit --no-fund ) >> "$LOG" 2>&1; then
+  tail -n 60 "$LOG" >&2
+  die "The web UI didn't build (the end of its log is above)."
+fi
 # Build-only: the compiler and the build cache.
 rm -rf "$UI/web/.next/cache" "$UI/web/node_modules/@next"/swc-*
 # sharp (Next's image library) only installed its own architecture: add the other.
