@@ -4,13 +4,18 @@
 // read (the fun overlay pauses for it), and any time from Find jobs. The
 // answers go into career-ops's profile through its own /api/profile, then the
 // rest of the profile is made theirs in the background (/api/jobdesk/personalize,
-// which keeps these answers), and the job search runs with these roles.
+// which keeps these answers), and the job search runs with these roles. The
+// dream-job card can swap the roles for a way into a new field.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Plus, X } from "lucide-react";
 import { instrumentSerif } from "@/lib/fonts";
 import { DEFAULT_FILTERS, filtersToParams } from "@/lib/explore";
+import type { DreamGoal, DreamPlan } from "@/lib/jobdesk/dream";
+import { DreamCard } from "./dream-card";
+
+const SENIOR = ["word:Senior", "word:Sr", "word:Lead", "word:Principal", "word:Staff", "Director", "Head of", "word:VP"];
 
 const box = "w-full rounded-xl border border-border bg-transparent px-3 py-2 text-foreground outline-none focus:border-brand/60";
 
@@ -18,6 +23,10 @@ export function WelcomeView() {
   const router = useRouter();
   const [first, setFirst] = useState(true);
   const [roles, setRoles] = useState<string[]>([]);
+  const [resumeRoles, setResumeRoles] = useState<string[]>([]);
+  const [goal, setGoal] = useState<DreamGoal | null>(null);
+  const [plan, setPlan] = useState<DreamPlan | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [newRole, setNewRole] = useState("");
   const [location, setLocation] = useState("");
   const [remote, setRemote] = useState(true);
@@ -32,14 +41,29 @@ export function WelcomeView() {
     fetch("/api/jobdesk/me")
       .then((r) => r.json())
       .then((d) => {
-        setRoles(fromCv.length ? fromCv : Array.isArray(d.roles) ? d.roles : []);
+        const initial: string[] = fromCv.length ? fromCv : Array.isArray(d.roles) ? d.roles : [];
+        setRoles(initial);
+        // With a dream plan, the profile's roles are the plan's, not the resume's.
+        if (!d.goal || fromCv.length) setResumeRoles(initial);
+        setGoal(d.goal || null);
+        setPlan(d.goal?.plan || null);
         setLocation(String(d.location || ""));
         if (d.payMin) setMinPay(String(d.payMin));
         if (d.payMax) setMaxPay(String(d.payMax));
         if (d.remote === "On-site only") setRemote(false);
       })
-      .catch(() => setRoles(fromCv));
+      .catch(() => {
+        setRoles(fromCv);
+        setResumeRoles(fromCv);
+      })
+      .finally(() => setLoaded(true));
   }, []);
+
+  const applyPlan = (next: DreamPlan | null) => {
+    setPlan(next);
+    if (next) setRoles(Array.from(new Set([...next.roles, ...next.dream])));
+    else if (resumeRoles.length) setRoles(resumeRoles);
+  };
 
   const addRole = () => {
     const r = newRole.trim();
@@ -65,7 +89,14 @@ export function WelcomeView() {
         }),
       });
       // The rest of the profile, from the resume, in the background.
-      void fetch("/api/jobdesk/personalize", { method: "POST" }).catch(() => {});
+      const pay = Number.isFinite(min) || Number.isFinite(max)
+        ? { min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined }
+        : null;
+      void fetch("/api/jobdesk/personalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pay }),
+      }).catch(() => {});
     } catch {
       /* searching still works */
     }
@@ -74,7 +105,13 @@ export function WelcomeView() {
       ...DEFAULT_FILTERS,
       ats: DEFAULT_FILTERS.ats.filter((a) => a !== "workday"),
       positive: roles,
+      // Someone moving into a new field is looking for a way in: leave out
+      // the senior versions of the titles ("UX Designer" also matches
+      // "Senior UX Designer").
+      negative: plan ? SENIOR : [],
       sinceDays: 30,
+      // Wider than the default 150 companies per job board (about 45 s).
+      limitPerAts: 500,
     };
     const qs = filtersToParams(filters);
     router.push(`/find?${qs}${qs ? "&" : ""}run=1`);
@@ -88,6 +125,8 @@ export function WelcomeView() {
       <p className="mt-2 text-muted">
         {first ? "I filled these in from your resume. Fix anything that's off, then I'll find your jobs." : "Change anything, and I'll search again."}
       </p>
+
+      {loaded && <DreamCard goal={goal} onPlan={applyPlan} />}
 
       <section className="mt-8">
         <h2 className="font-medium text-foreground">What kinds of jobs?</h2>
@@ -108,6 +147,17 @@ export function WelcomeView() {
             <Plus className="size-4" /> Add
           </button>
         </div>
+        {resumeRoles.some((r) => !roles.includes(r)) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-faint">From your resume:</span>
+            {resumeRoles.filter((r) => !roles.includes(r)).map((r) => (
+              <button key={r} onClick={() => setRoles([...roles, r])}
+                className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1 text-muted hover:border-brand/50 hover:text-foreground">
+                <Plus className="size-3.5" /> {r}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mt-8">

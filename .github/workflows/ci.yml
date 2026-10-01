@@ -23,6 +23,9 @@ jobs:
         run: shellcheck -x -s bash install.sh bin/jobdesk tests/*.sh macos/dmg-setup.sh macos/dmg/launch macos/shims/git tools/build-dmg.sh
       - name: unit tests
         run: bash tests/unit.sh
+      # Branded DMG builds edit career-ops's web UI at exact anchors.
+      - name: brand edits apply to the latest career-ops
+        run: bash tests/brand-check.sh
 
   e2e:
     name: install end to end (${{ matrix.os }})

@@ -175,15 +175,19 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
         </div>
       )}
 
-      {!scanning && (ex.phase === "failed" || ex.phase === "degraded") && (
+      {!scanning && ex.phase === "failed" && (
         <div className="mt-8 rounded-2xl border border-border p-5 text-foreground">
           The job search hit a snag. Press <strong>Search again</strong> in a moment.
         </div>
       )}
 
+      {/* Each search checks a different random batch of companies, so career-ops
+          calls an empty one "degraded" (not everything was checked): say so. */}
       {!scanning && ex.offers.length === 0 && ex.phase !== "idle" && ex.phase !== "failed" && (
         <div className="mt-8 rounded-2xl border border-border p-5 text-foreground">
-          No new jobs right now. Try <strong>Search again</strong> later. New postings show up every day.
+          None of the companies I checked this time are hiring for these. Every search looks at a
+          different batch, so press <strong>Search again</strong>, or{" "}
+          <Link href="/welcome" className="text-brand underline-offset-2 hover:underline">change what you&apos;re looking for</Link>.
         </div>
       )}
 

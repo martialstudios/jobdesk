@@ -282,11 +282,34 @@ it lives only on the owner's Mac.
     - The fun overlay pauses for the questions (`pause`/`resume` events) and
       replays a line it cut short.
     - Also reachable from Find jobs ("Change what I'm looking for").
+    - **Dreaming of something different?** (2026-10-01, `dream-card.tsx`,
+      `/api/jobdesk/dream`, `lib/jobdesk/dream.ts`). For a career changer whose
+      resume doesn't show the field they want (owner: Asal works at a
+      bookstore). They describe the dream job; Claude asks 2–4 tap-to-answer
+      follow-ups, then returns a plan: 4–8 short job titles that are a
+      realistic way in now (entry-level and bridge roles, written as they
+      appear in postings, since the scan matches them as text inside titles),
+      1–3 dream titles, what carries over (resume only), the path, and tips.
+      - The titles replace the resume's roles (which stay as "From your
+        resume" chips to add back).
+      - The plan is kept in `.career-ops-web/jobdesk-goal.json`; personalize
+        then writes `modes/_profile.md` for the move, so scores and tailored
+        resumes judge transferable skills, not years in the field.
+      - Each step is one `claude -p` call (~20 s, a few cents on the brand
+        model). "Change my dream job" clears the plan.
   - **Find jobs** (`/find`, home once there's a resume; `/` redirects there).
     career-ops's free scan, best fits first (by career-ops's own title-vs-profile
     `fit` band), "only near <city> or remote" on by default (falls back to all
     when fewer than 5), a checkbox per job, "Add to my list" or "Add and score
     them".
+    - **Coverage** (2026-10-01): the scan (`scan-ats-full.mjs`) checks a capped
+      number of companies per job board out of a ~16,000-company public
+      directory. career-ops's default (150, alphabetical) found 0 jobs for a
+      career changer's titles. The questions page now asks for 500 per board
+      (career-ops's maximum) and the brand layer adds `--shuffle`, so every search
+      samples a different random slice. Measured: about 30–45 s, 4–12
+      matching jobs a run for entry-level UX/content titles. With a dream plan,
+      senior titles (`word:Senior`, `word:Lead`, …) are excluded.
   - **My list** (`/my-list`, stored in `.career-ops-web/jobdesk-list.json`).
     - **Apply to these** walks through the jobs one at a time: career-ops's
       apply opens the real form pre-filled, she submits it herself, then
@@ -319,6 +342,16 @@ it lives only on the owner's Mac.
   - `dmg-setup.sh` starts the other two from career-ops's own templates, and
     only when they're missing.
   - The plain editions still get the profile from the assistant's onboarding.
+- **Theme** (2026-10-01, `BRAND_THEME=howl`, `components/howl/`): the owner
+  asked for Studio Ghibli decoration, Howl's Moving Castle above all (Asal's
+  favorite). Ghibli's stills and artwork are copyrighted and the app is a file
+  that gets handed on, so nothing of theirs ships. Instead, original SVG
+  drawings in that spirit: a patchwork castle on bird legs that walks along the
+  loading bar, a hearth flame with eyes by the percentage, a sky band behind
+  every page (drifting clouds by day, stars and a shooting star in dark mode),
+  and a flower meadow with the castle at the foot of the sidebar. The motion
+  stops under prefers-reduced-motion. The components always ship and render
+  nothing unless the brand file sets the theme.
 - **Model and cost** (2026-10-01): `build-dmg.sh --model=ID` / `BRAND_MODEL`
   writes `ANTHROPIC_MODEL` next to the key, and `dmg_server_env` exports it.
   career-ops never passes `--model`, so it applies to every Claude Code run.

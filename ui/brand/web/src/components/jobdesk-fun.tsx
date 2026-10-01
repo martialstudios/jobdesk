@@ -17,6 +17,7 @@
 import { useEffect, useState } from "react";
 import { instrumentSerif } from "@/lib/fonts";
 import { JOBDESK_FUN } from "@/lib/jobdesk-brand";
+import { HowlFlame, HowlTrack } from "@/components/howl/decor";
 
 const SAFETY_MS = 6 * 60 * 1000;
 // The bar: reading the CV fills up to READ_SHARE (an estimate, easing in);
@@ -169,6 +170,7 @@ export function JobdeskFun() {
         {JOBDESK_FUN.dots.includes(text) && <span style={{ visibility: "hidden" }}>{".".repeat(3 - dots)}</span>}
       </p>
       <div className="w-full max-w-md" aria-label={`${rounded} percent`}>
+        <HowlTrack pct={rounded} />
         <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: "color-mix(in srgb, var(--fg) 12%, transparent)" }}>
           <div
             className="h-full rounded-full"
@@ -176,7 +178,10 @@ export function JobdeskFun() {
           />
         </div>
         <div className="mt-3 flex justify-between font-mono text-sm" style={{ color: "color-mix(in srgb, var(--fg) 65%, transparent)" }}>
-          <span>{rounded}%</span>
+          <span>
+            <HowlFlame />
+            {rounded}%
+          </span>
           <span>{found > 0 ? `${found.toLocaleString()} job${found === 1 ? "" : "s"} found so far` : "reading your resume"}</span>
         </div>
       </div>

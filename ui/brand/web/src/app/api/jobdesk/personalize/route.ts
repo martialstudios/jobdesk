@@ -11,6 +11,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { careerOpsRoot } from "@/lib/career-ops";
 import { resolveCli } from "@/lib/clis";
+import { readGoal } from "@/lib/jobdesk/dream";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,10 +26,9 @@ config/profile.yml and modes/_profile.md. Read cv.md first.
    person (compensation and salary, work authorization and visa, languages, availability,
    relocation, demographics, side projects, links): keep it only if cv.md states it, otherwise
    empty it ("" or []), so nothing about the example person can ever end up in an application.
-   The person just answered a few questions themselves: keep their target roles, location,
-   compensation.target_range, currency and remote preference exactly as they are in the file
-   now. Every other compensation value must agree with their answer: set compensation.minimum
-   to the low end of target_range, or empty it when there's no range. Set seniority and
+   The person just answered a few questions themselves: keep their target roles, location and
+   remote preference exactly as they are in the file now. Their salary answer is given at the
+   end; every compensation value must agree with it. Set seniority and
    narrative from what cv.md actually shows. Leave the app's
    own settings (scanning, output language, spend, CV template) and the file's structure as they are.
 2. modes/_profile.md: rewrite every section that still describes the template's example
@@ -39,7 +39,43 @@ config/profile.yml and modes/_profile.md. Read cv.md first.
 Never invent employers, dates, numbers, skills or contact details. Don't touch any other file.
 Reply with one short line when you're done.`;
 
-export async function POST() {
+// When they told the dream-job helper where they want to go, the profile is
+// written for that move, so every score and tailored resume judges them as a
+// career changer instead of against their current field.
+function goalPrompt(): string {
+  const goal = readGoal();
+  if (!goal) return "";
+  const roles = [...goal.plan.roles, ...goal.plan.dream].join(", ");
+  return `
+
+This person is changing careers. Their dream job, in their words: ${goal.dream}
+The roles they're targeting now: ${roles}
+${goal.plan.profile}
+In modes/_profile.md, write the archetypes, North Star, framing and narrative for that move: the
+target roles above, and how what cv.md actually shows (transferable skills, results, interests)
+carries over. Fit should be judged on potential and transferable skills, not years in the field.
+Still never invent experience the resume doesn't show.`;
+}
+
+// Their salary answer, said plainly, so the example file's range ($150K-200K)
+// never survives as theirs when they left the boxes empty.
+function payPrompt(pay: { min?: number; max?: number } | null): string {
+  const ok = (n: unknown) => typeof n === "number" && Number.isFinite(n) && n > 0;
+  if (!pay || (!ok(pay.min) && !ok(pay.max))) {
+    return "\n\nSalary answer: none given. Empty compensation.target_range and compensation.minimum (\"\").";
+  }
+  const min = ok(pay.min) ? pay.min! : pay.max!;
+  const max = ok(pay.max) ? pay.max! : min;
+  return `\n\nSalary answer: ${min}-${max} USD a year. Set compensation.target_range to "${min}-${max}", currency to USD and compensation.minimum to "${min}".`;
+}
+
+export async function POST(req: Request) {
+  let pay: { min?: number; max?: number } | null = null;
+  try {
+    pay = ((await req.json()) as { pay?: { min?: number; max?: number } | null }).pay ?? null;
+  } catch {
+    pay = null;
+  }
   const root = careerOpsRoot();
   if (!fs.existsSync(path.join(/* turbopackIgnore: true */ root, "cv.md"))) {
     return Response.json({ error: "no resume yet" }, { status: 400 });
@@ -59,7 +95,7 @@ export async function POST() {
   const log = fs.openSync(path.join(dir, "jobdesk-personalize.log"), "a");
   const child = spawn(
     cli.binPath,
-    ["-p", PROMPT, "--permission-mode", "acceptEdits", "--allowedTools", "Read,Edit,Write,Glob,Grep"],
+    ["-p", PROMPT + goalPrompt() + payPrompt(pay), "--permission-mode", "acceptEdits", "--allowedTools", "Read,Edit,Write,Glob,Grep"],
     { cwd: root, env: process.env, detached: true, stdio: ["ignore", log, log] },
   );
   child.on("close", () => fs.rmSync(lock, { force: true }));

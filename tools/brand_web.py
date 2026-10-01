@@ -106,6 +106,17 @@ def main():
     edit(web, "src/components/app-shell.tsx",
          'import { BetaBanner } from "@/components/beta/beta-banner";',
          'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { TaskRunner } from "@/components/jobdesk/tasks";')
+    # The optional theme's drawings (components/howl): they render nothing
+    # unless the brand file sets BRAND_THEME.
+    edit(web, "src/components/app-shell.tsx", '      <div className="flex min-h-screen">\n',
+         '      <HowlStyles />\n      <HowlSky />\n      <div className="flex min-h-screen">\n')
+    edit(web, "src/components/app-shell.tsx", '<main className="flex-1 overflow-x-hidden">',
+         '<main className="relative z-[1] flex-1 overflow-x-hidden">')
+    edit(web, "src/components/app-shell.tsx", "              </div>\n            </div>\n          </div>\n        </aside>",
+         "              </div>\n            </div>\n            <HowlMeadow />\n          </div>\n        </aside>")
+    edit(web, "src/components/app-shell.tsx",
+         'import { ThemeToggle } from "@/components/theme-toggle";',
+         'import { ThemeToggle } from "@/components/theme-toggle";\nimport { HowlMeadow, HowlSky, HowlStyles } from "@/components/howl/decor";')
     # career-ops's first-score popup leads with the raw grade; the job page
     # leads with strengths instead.
     edit(web, "src/components/app-shell.tsx", "        <FirstScoreView />\n", "")
@@ -283,6 +294,16 @@ def main():
 
     # JobDesk's start page shows its title for a moment while it redirects.
     edit(web, "public/jobdesk-start.html", "<title>JobDesk</title>", f"<title>{name}</title>")
+    # The free search checks a capped number of companies per job board. By
+    # default that's the directory's alphabetical first ones, every time, so
+    # most of its ~16,000 companies are never seen; a random sample finds a
+    # different slice on every search.
+    edit(web, "src/lib/core/scan.ts",
+         """      String(Math.max(1, filters.limitPerAts || 150)),
+    ];""",
+         """      String(Math.max(1, filters.limitPerAts || 150)),
+      "--shuffle",
+    ];""")
 
     # 2. The simple screens and the overlay: new files only, never over career-ops's.
     tree = os.path.join(ROOT, "ui", "brand", "web")
@@ -302,9 +323,13 @@ def main():
     if not isinstance(dots, list) or not all(isinstance(d, str) for d in dots):
         die("BRAND_FUN_DOTS must be a JSON list of lines")
     fun = {"lines": [[t, s] for t, s in lines], "reveal": reveal, "revealSeconds": reveal_secs, "dots": dots}
+    theme = os.environ.get("BRAND_THEME", "").strip()
+    if theme not in ("", "howl"):
+        die(f"BRAND_THEME {theme!r}: the only theme is howl (or leave it empty)")
     with open(os.path.join(web, "src", "lib", "jobdesk-brand.ts"), "w", encoding="utf-8") as f:
         f.write("// Written by JobDesk's tools/brand_web.py from the brand file.\n")
         f.write("export const JOBDESK_BRAND_NAME = " + json.dumps(name, ensure_ascii=False) + ";\n")
+        f.write("export const JOBDESK_THEME: string = " + json.dumps(theme) + ";\n")
         f.write("export const JOBDESK_FUN: { lines: [string, number | null][]; reveal: string; "
                 "revealSeconds: number; dots: string[] } = " + json.dumps(fun, ensure_ascii=False) + ";\n")
 
