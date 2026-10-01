@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  JobDesk's start page, added to career-ops's web UI as public/jobdesk-start.html
+  (a static file: career-ops's own code is untouched). `jobdesk open` opens the
+  UI through here so the AI helper JobDesk set up is already chosen: career-ops
+  keeps that choice in the browser, and without it reading a PDF CV sends people
+  to the Config page first. A choice already made in the browser is kept.
+-->
+<html lang="en">
+<meta charset="utf-8">
+<title>JobDesk</title>
+<meta name="viewport" content="width=device-width">
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var cli = params.get("cli") || "";
+    var to = params.get("to") || "/";
+    // Only a path on this same site, never another origin ("//host", "http:").
+    if (!/^\/(?![\/\\])/.test(to)) to = "/";
+    try {
+      if (/^(claude|codex|gemini)$/.test(cli)) {
+        var key = "career-ops:config";
+        var cfg = {};
+        try { cfg = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) { cfg = {}; }
+        if (typeof cfg !== "object" || Array.isArray(cfg)) cfg = {};
+        if (!cfg.cliId) {
+          cfg.mode = cfg.mode || "cli";
+          cfg.cliId = cli;
+          localStorage.setItem(key, JSON.stringify(cfg));
+        }
+      }
+    } catch (e) { /* storage blocked: career-ops asks on its Config page as usual */ }
+    location.replace(to);
+  })();
+</script>
+<noscript><meta http-equiv="refresh" content="0; url=/"></noscript>
+</html>

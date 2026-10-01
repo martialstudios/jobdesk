@@ -7,10 +7,12 @@ guide walks a non-technical person through that, once.
 
     python3 -m pip install pillow
     python3 tools/make_dmg_guide.py
+    python3 tools/make_dmg_guide.py --name="Sam’s Job Search" --from=Ryan --out=guide.png  # a branded build
 
 Uses macOS's Helvetica Neue when present (falls back to Pillow's default font).
 """
 
+import argparse
 import os
 
 from PIL import Image, ImageDraw, ImageFont
@@ -20,6 +22,7 @@ OUT = os.path.join(HERE, "..", "assets", "dmg", "How to open JobDesk.png")
 ICON = os.path.join(HERE, "..", "assets", "JobDesk.png")
 
 W, H = 1400, 1900
+APP = "JobDesk"  # set from --name
 NAVY = (16, 42, 84)
 TEAL = (18, 112, 120)
 AMBER = (255, 184, 48)
@@ -89,7 +92,8 @@ def mock_drag(draw, img, box):
     draw.rounded_rectangle(box, radius=18, fill=WHITE, outline=LINE, width=2)
     icon = Image.open(ICON).convert("RGBA").resize((150, 150))
     img.paste(icon, (x0 + 40, y0 + 50), icon)
-    draw.text((x0 + 70, y0 + 210), "JobDesk", font=font(26), fill=INK)
+    label = APP if len(APP) <= 12 else "the app"
+    draw.text((x0 + 115 - draw.textlength(label, font=font(26)) / 2, y0 + 210), label, font=font(26), fill=INK)
     # arrow
     ay = y0 + 125
     draw.line((x0 + 215, ay, x1 - 200, ay), fill=AMBER, width=10)
@@ -104,9 +108,11 @@ def mock_drag(draw, img, box):
 def mock_blocked(draw, img, box):
     x0, y0, x1, y1 = box
     draw.rounded_rectangle(box, radius=18, fill=WHITE, outline=LINE, width=2)
-    draw.text((x0 + 30, y0 + 28), "“JobDesk” Not Opened", font=font(28, bold=True), fill=INK)
-    paragraph(draw, (x0 + 30, y0 + 74), "Apple could not verify “JobDesk” is free of malware…",
-              font(22), MUTED, x1 - x0 - 60, gap=6)
+    y = paragraph(draw, (x0 + 30, y0 + 22), f"“{APP}” Not Opened", font(24 if len(APP) > 20 else 28, bold=True),
+                  INK, x1 - x0 - 60, gap=4)
+    if len(APP) <= 20:  # a long name's title takes the room
+        paragraph(draw, (x0 + 30, y + 4), "Apple could not verify it is free of malware…", font(22), MUTED,
+                  x1 - x0 - 60, gap=6)
     bx = button(draw, (x0 + 30, y1 - 80), "Move to Trash")
     button(draw, (bx + 20, y1 - 80), "Done", primary=True)
     draw.text((x0 + 30, y1 - 130), "Click Done (not Move to Trash)", font=font(22, bold=True), fill=TEAL)
@@ -118,8 +124,8 @@ def mock_settings(draw, img, box):
     draw.text((x0 + 30, y0 + 26), "Privacy & Security", font=font(28, bold=True), fill=INK)
     draw.line((x0 + 30, y0 + 72, x1 - 30, y0 + 72), fill=LINE, width=2)
     draw.text((x0 + 30, y0 + 90), "Security", font=font(22, bold=True), fill=MUTED)
-    paragraph(draw, (x0 + 30, y0 + 128), "“JobDesk” was blocked to protect your Mac.",
-              font(24), INK, x1 - x0 - 60, gap=6)
+    paragraph(draw, (x0 + 30, y0 + 124), f"“{APP}” was blocked to protect your Mac." if len(APP) <= 20
+              else "“…” was blocked to protect your Mac.", font(24), INK, x1 - x0 - 60, gap=6)
     bx0 = x1 - 250
     button(draw, (bx0, y1 - 84), "Open Anyway", primary=True)
     draw.rounded_rectangle((bx0 - 10, y1 - 94, bx0 + 222, y1 - 18), radius=16, outline=AMBER, width=5)
@@ -128,31 +134,42 @@ def mock_settings(draw, img, box):
 def mock_ready(draw, img, box):
     x0, y0, x1, y1 = box
     draw.rounded_rectangle(box, radius=18, fill=WHITE, outline=LINE, width=2)
-    draw.text((x0 + 30, y0 + 28), "Setting up JobDesk…", font=font(28, bold=True), fill=INK)
+    draw.text((x0 + 30, y0 + 28), "Setting up…", font=font(28, bold=True), fill=INK)
     draw.rounded_rectangle((x0 + 30, y0 + 90, x1 - 30, y0 + 112), radius=11, fill=LINE)
     draw.rounded_rectangle((x0 + 30, y0 + 90, x0 + 30 + (x1 - x0 - 60) * 0.7, y0 + 112), radius=11, fill=BLUE)
     draw.text((x0 + 30, y0 + 130), "Only the first time. About a minute.", font=font(22), fill=MUTED)
-    draw.text((x0 + 30, y0 + 190), "Then JobDesk opens in", font=font(24), fill=INK)
+    draw.text((x0 + 30, y0 + 190), "Then it opens in", font=font(24), fill=INK)
     draw.text((x0 + 30, y0 + 222), "your web browser.", font=font(24), fill=INK)
 
 
 def main():
+    global APP
+    ap = argparse.ArgumentParser(description="Draw the DMG's picture guide.")
+    ap.add_argument("--name", default="JobDesk", help="the app's name")
+    ap.add_argument("--from", dest="sender", default="", help="who it's from (a branded build's footer)")
+    ap.add_argument("--out", default=OUT)
+    args = ap.parse_args()
+    APP = args.name
     img = Image.new("RGB", (W, H), WHITE)
     draw = ImageDraw.Draw(img)
-    # header
+    # header: the title shrinks to fit a long name
     draw.rectangle((0, 0, W, 200), fill=NAVY)
     icon = Image.open(ICON).convert("RGBA").resize((130, 130))
     img.paste(icon, (80, 35), icon)
-    draw.text((240, 50), "How to open JobDesk", font=font(60, bold=True), fill=WHITE)
+    title = f"How to open {APP}"
+    size = 60
+    while size > 30 and draw.textlength(title, font=font(size, bold=True)) > W - 320:
+        size -= 2
+    draw.text((240, 88 - size), title, font=font(size, bold=True), fill=WHITE)
     draw.text((242, 125), "The first time only. After that it opens like any other app.",
               font=font(30), fill=(200, 214, 235))
 
     top = 250
     step(draw, img, 1, top, "Move it to Applications",
-         "In the JobDesk window, drag the JobDesk icon onto the Applications folder.", mock_drag)
+         "In the window that opened, drag the app's icon onto the Applications folder.", mock_drag)
     top += 400
     step(draw, img, 2, top, "Open it once",
-         "Open JobDesk from Applications. macOS says it can't check the app, because it isn't from the "
+         "Open it from Applications. macOS says it can't check the app, because it isn't from the "
          "App Store. Click Done.", mock_blocked)
     top += 400
     step(draw, img, 3, top, "Allow it",
@@ -160,15 +177,18 @@ def main():
          "click Open Anyway, enter your Mac's password, and click Open Anyway again.", mock_settings)
     top += 400
     step(draw, img, 4, top, "You're in",
-         "JobDesk sets itself up and opens in your browser. On the Home page, click “Set me up with the "
-         "assistant” and tell it about the jobs you want.", mock_ready)
+         "It sets itself up and opens in your browser. Drop your resume in the box, press Read my CV, "
+         "and it finds jobs that fit you.", mock_ready)
 
     foot = font(24)
-    paragraph(draw, (80, H - 90), "JobDesk works with career-ops (github.com/career-ops-hq/career-ops). It isn't "
-              "made by or affiliated with the career-ops project.", foot, MUTED, W - 160, gap=6)
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    img.save(OUT, optimize=True)
-    print(OUT)
+    if args.sender:
+        paragraph(draw, (80, H - 90), f"Made for you by {args.sender}.", foot, MUTED, W - 160, gap=6)
+    else:
+        paragraph(draw, (80, H - 90), "JobDesk works with career-ops (github.com/career-ops-hq/career-ops). It isn't "
+                  "made by or affiliated with the career-ops project.", foot, MUTED, W - 160, gap=6)
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    img.save(args.out, optimize=True)
+    print(args.out)
 
 
 if __name__ == "__main__":

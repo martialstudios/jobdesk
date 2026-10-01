@@ -144,6 +144,12 @@ Keep in mind:
 - To update them, build a newer DMG and have them drag the new JobDesk into
   Applications again. Their data is kept.
 
+**Make it theirs.** `tools/build-dmg.sh --brand=brands/<name>.env` builds a
+personalized copy. It sets the app's name everywhere (the app, the browser
+tab, the setup window), the hint in the CV box, and a few playful lines shown
+while it reads their CV and finds jobs. Their folder gets its own name too.
+Copy `brands/example.env` to start. Personal brand files stay out of git.
+
 ## Uninstalling
 
 Run `jobdesk uninstall`. It removes JobDesk.app and the `~/.jobdesk` folder

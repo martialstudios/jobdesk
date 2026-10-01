@@ -95,8 +95,24 @@ The career-ops web UI (Next.js, alpha) provides:
 - **Named "JobDesk", not "career-ops-something".** career-ops's `TRADEMARK.md`
   requires permission for product names containing "career-ops". JobDesk says
   it "works with" career-ops and is unaffiliated.
-- **Use career-ops's official web UI (`web/`) as-is.** Don't fork it, and don't
-  use the community GUIs (small, and third-party code touching CVs).
+- **Use career-ops's official web UI (`web/`), with one small patch.** Don't fork
+  it, and don't use the community GUIs (small, and third-party code touching CVs).
+  - Since 2026-09-29, one line is patched at build time (`patch_web_ui` in
+    `install.sh`). The owner's non-technical test found drop-CV-to-results far
+    too slow, so the first scan after saving a CV skips Workday. Its boards sit
+    behind one host and took ~5 of ~6 minutes, with nothing shown until every
+    board finished; without it, results arrive in ~1 minute. Workday is still
+    in "Refine search".
+  - The DMG build refuses to finish if the line changed; the Terminal installer
+    warns and builds unpatched. Keep any further patches this small and checked.
+- **JobDesk's start page** (`ui/jobdesk-start.html`, added as a static file in
+  `web/public/`). career-ops keeps the chosen AI CLI in the browser's
+  localStorage, and its PDF CV import doesn't fall back to the only installed
+  CLI: without a choice it sends people to Config first.
+  - `jobdesk open` opens `/jobdesk-start.html?cli=$JOBDESK_AI`, which saves that
+    choice when none exists yet, then goes to `/`.
+  - Next.js only indexes `public/` at server start, so a running server needs a
+    restart to serve a newly added start page.
 - **JobDesk keeps its own copy of `web/`.** It's extracted from the career-ops
   release tag matching the core's `VERSION`, and run with `CAREER_OPS_ROOT`
   pointing at the user's checkout. Why:
@@ -222,6 +238,40 @@ tools prompt, no downloads and no AI login. `tools/build-dmg.sh` builds
     needs git); only the web UI, Node and Claude Code move forward.
   - The Apply feature still needs Google Chrome installed.
 
+## Brand builds (2026-09-29)
+
+`tools/build-dmg.sh --brand=brands/<name>.env` builds a personalized DMG for
+one person. The owner's first one is `brands/asal.env` ("Asal’s Amazing Job
+Application Software From Ryan"). It's git-ignored because it's personal, so
+it lives only on the owner's Mac.
+
+- **`tools/brand_web.py`** rebrands career-ops's web UI before it's built.
+  - Every *visible* "career-ops" becomes the brand name. File paths, storage
+    keys, URLs and the prompts that drive Claude are kept; Claude is told to
+    use the brand name.
+  - The "co" logo and favicon become the app icon, the version pill and its
+    "Report a bug" link are dropped, and the home intro and the empty-pipeline
+    Terminal tip are rewritten.
+  - Each targeted edit must find its anchor, or the build fails.
+- **The CV-to-results overlay.** `ui/brand/jobdesk-fun.tsx` is mounted in the
+  app shell and driven by `jobdesk:fun` window events. cv-ingest sends
+  `start`, and in brand builds skips its review step (auto-saves once);
+  explore-provider sends `done`, and an error sends `stop`.
+  - Scripted lines come from `BRAND_FUN_LINES`. A last `null`-duration line
+    holds until the results are in, then `BRAND_FUN_REVEAL` shows briefly.
+  - Measured on Asal's build: 0/2/4/6/16 s as scripted, 👀 at 47 s, 101 roles
+    at 49 s.
+- **The rest of the app is branded too.** The app name (bundle name, file
+  name, every applet dialog: the build substitutes "JobDesk" in the
+  AppleScript's strings, so no handler name may contain "JobDesk"), the disk
+  image name, and the picture guide (`make_dmg_guide.py --name --from`).
+- **Her folder** is `~/<BRAND_DATA_DIR>` (via `payload/brand.env`) on a fresh
+  install; an existing install keeps its folder.
+- **Uninstall** recognizes a renamed app by its bundle id (`is_jobdesk_app`).
+- **Still visible after branding:** Claude-written evaluation reports can
+  mention career-ops's file names, and the MIT `LICENSE` stays in her folder
+  (required).
+
 ## Files
 
 | Path | What it is |
@@ -341,8 +391,9 @@ round found nothing.
   needed today because the app is built locally.
 - Intel Mac coverage in CI. The macOS images' labels change over time, so check
   current GitHub runner labels first.
-- Pre-selecting the AI CLI in the web UI. It lives in the browser's
-  `localStorage`, per origin (port), so users pick it once on the Config page.
+- Scoring the first few scan results automatically, so the first thing a new
+  user sees is scored roles. Today they click Evaluate on a role, which spends
+  tokens. It would need another web UI patch, and it's a cost decision for the owner.
 - Optional Playwright MCP setup, for people who also use career-ops's CLI
   `apply` mode.
 - Checking for updates from the app itself.

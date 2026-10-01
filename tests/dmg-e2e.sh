@@ -44,6 +44,14 @@ cleanup() {
 }
 trap cleanup EXIT
 port() { cat "$H/.jobdesk/run/server.port"; }
+# The job scanner must be reachable: /api/explore answers 400 straight away
+# when the web UI can't find career-ops's scripts (career-ops 1.35 moved that
+# lookup), and streams a scan otherwise.
+scan_code() {
+  curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 8 -X POST \
+    -H 'Content-Type: application/json' -H "Origin: http://127.0.0.1:$(port)" -H 'Sec-Fetch-Site: same-origin' \
+    "http://127.0.0.1:$(port)/api/explore" -d '{"ats":["lever"],"positive":["engineer"],"limitPerAts":1}'
+}
 http_code() { curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 30 "http://127.0.0.1:$(port)$1"; }
 
 if [ -n "${DMG_E2E_DMG:-}" ]; then
@@ -114,6 +122,7 @@ HOME="$H" "$L" start || fail "start"
 curl -fsS --noproxy '*' "http://127.0.0.1:$(port)/api/version" | grep -q '"coreVersion"' || fail "/api/version"
 for p in / /pipeline /config; do [ "$(http_code "$p")" = 200 ] || fail "page $p"; done
 curl -fsS --noproxy '*' "http://127.0.0.1:$(port)/api/doctor" | grep -q '"onboardingNeeded"' || fail "/api/doctor"
+[ "$(scan_code)" != 400 ] || fail "the web UI can't find career-ops's job scanner"
 curl -fsS --noproxy '*' "http://127.0.0.1:$(port)/api/clis" | grep -q "\"path\":\"$H/.jobdesk/tools/bin/claude\"" ||
   fail "the web UI doesn't see the bundled Claude Code"
 printf 'web UI OK on port %s\n' "$(port)"
