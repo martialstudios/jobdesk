@@ -89,7 +89,14 @@ export function WelcomeView() {
         }),
       });
       // The rest of the profile, from the resume, in the background.
-      void fetch("/api/jobdesk/personalize", { method: "POST" }).catch(() => {});
+      const pay = Number.isFinite(min) || Number.isFinite(max)
+        ? { min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined }
+        : null;
+      void fetch("/api/jobdesk/personalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pay }),
+      }).catch(() => {});
     } catch {
       /* searching still works */
     }

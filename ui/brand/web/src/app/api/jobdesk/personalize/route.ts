@@ -26,10 +26,9 @@ config/profile.yml and modes/_profile.md. Read cv.md first.
    person (compensation and salary, work authorization and visa, languages, availability,
    relocation, demographics, side projects, links): keep it only if cv.md states it, otherwise
    empty it ("" or []), so nothing about the example person can ever end up in an application.
-   The person just answered a few questions themselves: keep their target roles, location,
-   compensation.target_range, currency and remote preference exactly as they are in the file
-   now. Every other compensation value must agree with their answer: set compensation.minimum
-   to the low end of target_range, or empty it when there's no range. Set seniority and
+   The person just answered a few questions themselves: keep their target roles, location and
+   remote preference exactly as they are in the file now. Their salary answer is given at the
+   end; every compensation value must agree with it. Set seniority and
    narrative from what cv.md actually shows. Leave the app's
    own settings (scanning, output language, spend, CV template) and the file's structure as they are.
 2. modes/_profile.md: rewrite every section that still describes the template's example
@@ -58,7 +57,25 @@ carries over. Fit should be judged on potential and transferable skills, not yea
 Still never invent experience the resume doesn't show.`;
 }
 
-export async function POST() {
+// Their salary answer, said plainly, so the example file's range ($150K-200K)
+// never survives as theirs when they left the boxes empty.
+function payPrompt(pay: { min?: number; max?: number } | null): string {
+  const ok = (n: unknown) => typeof n === "number" && Number.isFinite(n) && n > 0;
+  if (!pay || (!ok(pay.min) && !ok(pay.max))) {
+    return "\n\nSalary answer: none given. Empty compensation.target_range and compensation.minimum (\"\").";
+  }
+  const min = ok(pay.min) ? pay.min! : pay.max!;
+  const max = ok(pay.max) ? pay.max! : min;
+  return `\n\nSalary answer: ${min}-${max} USD a year. Set compensation.target_range to "${min}-${max}", currency to USD and compensation.minimum to "${min}".`;
+}
+
+export async function POST(req: Request) {
+  let pay: { min?: number; max?: number } | null = null;
+  try {
+    pay = ((await req.json()) as { pay?: { min?: number; max?: number } | null }).pay ?? null;
+  } catch {
+    pay = null;
+  }
   const root = careerOpsRoot();
   if (!fs.existsSync(path.join(/* turbopackIgnore: true */ root, "cv.md"))) {
     return Response.json({ error: "no resume yet" }, { status: 400 });
@@ -78,7 +95,7 @@ export async function POST() {
   const log = fs.openSync(path.join(dir, "jobdesk-personalize.log"), "a");
   const child = spawn(
     cli.binPath,
-    ["-p", PROMPT + goalPrompt(), "--permission-mode", "acceptEdits", "--allowedTools", "Read,Edit,Write,Glob,Grep"],
+    ["-p", PROMPT + goalPrompt() + payPrompt(pay), "--permission-mode", "acceptEdits", "--allowedTools", "Read,Edit,Write,Glob,Grep"],
     { cwd: root, env: process.env, detached: true, stdio: ["ignore", log, log] },
   );
   child.on("close", () => fs.rmSync(lock, { force: true }));
