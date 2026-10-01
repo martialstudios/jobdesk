@@ -271,6 +271,17 @@ it lives only on the owner's Mac.
   was no way to act on many jobs at once.
   - They are new files only; `brand_web.py` refuses to overwrite career-ops's.
     career-ops's own screens stay reachable under **Advanced**.
+  - **A few quick questions** (`/welcome`, 2026-10-01). A read resume goes
+    here, not straight to the search (owner: "the flow asking for my resume
+    first and answering questions for her profile"). It asks for job types
+    (pre-filled from the resume, as removable tags), location with an "open to
+    remote" toggle, and an optional salary range.
+    - Answers are saved through career-ops's `/api/profile`; then
+      `/api/jobdesk/personalize` runs, keeping those answers; then the search
+      starts.
+    - The fun overlay pauses for the questions (`pause`/`resume` events) and
+      replays a line it cut short.
+    - Also reachable from Find jobs ("Change what I'm looking for").
   - **Find jobs** (`/find`, home once there's a resume; `/` redirects there).
     career-ops's free scan, best fits first (by career-ops's own title-vs-profile
     `fit` band), "only near <city> or remote" on by default (falls back to all

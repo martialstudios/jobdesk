@@ -16,7 +16,14 @@ export async function GET() {
     profile = {};
   }
   const c = profile.candidate || {};
+  const comp = profile.compensation || {};
+  const [payMin, payMax] = String(comp.target_range || "")
+    .split(/[-–]/)
+    .map((x) => Number.parseInt(x.replace(/[^\d]/g, ""), 10));
   return Response.json({
+    payMin: Number.isFinite(payMin) ? payMin : null,
+    payMax: Number.isFinite(payMax) ? payMax : null,
+    remote: comp.location_flexibility || "",
     hasCv: fs.existsSync(path.join(/* turbopackIgnore: true */ root, "cv.md")),
     name: c.full_name || "",
     location: c.location || "",

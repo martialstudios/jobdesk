@@ -151,6 +151,9 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
         <div>
           <h1 className={`${instrumentSerif.className} text-4xl text-landing md:text-5xl`}>Jobs for you</h1>
           <p className="mt-2 text-muted">Free to search. Check the ones you like, then add them to your list.</p>
+          <Link href="/welcome" className="mt-1 inline-block text-sm text-brand underline-offset-2 hover:underline">
+            Change what I&apos;m looking for
+          </Link>
         </div>
         <button
           onClick={() => void ex.discover()}

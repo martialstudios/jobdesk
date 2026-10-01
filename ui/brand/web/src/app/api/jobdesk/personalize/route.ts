@@ -25,10 +25,16 @@ config/profile.yml and modes/_profile.md. Read cv.md first.
    person (compensation and salary, work authorization and visa, languages, availability,
    relocation, demographics, side projects, links): keep it only if cv.md states it, otherwise
    empty it ("" or []), so nothing about the example person can ever end up in an application.
-   Set target roles, seniority and narrative from what cv.md actually shows. Leave the app's
+   The person just answered a few questions themselves: keep their target roles, location,
+   compensation.target_range, currency and remote preference exactly as they are in the file
+   now. Every other compensation value must agree with their answer: set compensation.minimum
+   to the low end of target_range, or empty it when there's no range. Set seniority and
+   narrative from what cv.md actually shows. Leave the app's
    own settings (scanning, output language, spend, CV template) and the file's structure as they are.
-2. modes/_profile.md: replace the template's example archetypes, North Star and proof points
-   with ones that fit this person's real background, from cv.md only. Keep the headings.
+2. modes/_profile.md: rewrite every section that still describes the template's example
+   person (archetypes, North Star, framing, exit narrative, proof points, cross-cutting
+   advantage) so it fits this person's real background and the target roles in
+   config/profile.yml, from cv.md only. Keep the headings.
 
 Never invent employers, dates, numbers, skills or contact details. Don't touch any other file.
 Reply with one short line when you're done.`;

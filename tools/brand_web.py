@@ -141,8 +141,12 @@ def main():
          '  if (phase === "first-run") return <FirstRunHome />;\n  redirect("/find");\n')
     edit(web, "src/app/page.tsx", 'import { FirstRunHome } from "@/components/home/first-run-home";',
          'import { FirstRunHome } from "@/components/home/first-run-home";\nimport { redirect } from "next/navigation";')
+    # A read resume goes to a few quick questions (the overlay pauses for them,
+    # and they start the search); /welcome is in ui/brand/web.
     edit(web, "src/components/cv/cv-ingest.tsx",
-         '    router.push(`/explore?${qs}${qs ? "&" : ""}run=1`);', '    router.push(`/find?${qs}${qs ? "&" : ""}run=1`);')
+         '    router.push(`/explore?${qs}${qs ? "&" : ""}run=1`);',
+         '    window.dispatchEvent(new CustomEvent("jobdesk:fun", { detail: "pause" }));\n'
+         '    router.push(`/welcome?first=1${qs ? "&" : ""}${qs}`);')
     # Applying to a job with no tailored CV attaches their own resume (a PDF
     # made from it) rather than nothing.
     edit(web, "src/app/api/apply/fill/route.ts",
@@ -232,9 +236,6 @@ def main():
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: who, email, location: seed?.location || undefined, roles }),
       });
-      // Then, in the background, Claude makes the rest of the profile theirs
-      // (real contact details, targeting that fits): /api/jobdesk/personalize.
-      void fetch("/api/jobdesk/personalize", { method: "POST" }).catch(() => {});
     } catch {
       /* the assistant can still set it up */
     }
