@@ -23,6 +23,9 @@
 #                    request then has to name one (Console → Settings → Workspaces)
 #   --no-key         build without a Claude key (testing)
 #   --test-home=DIR  the app sets up in DIR instead of the real home (testing)
+#   --model=ID       the Claude model every AI step uses (e.g. claude-sonnet-5-5,
+#                    about half the cost of Claude Code's default); a brand file's
+#                    BRAND_MODEL sets it too
 #   --brand=FILE     a personalized build for one person: its name, the words in
 #                    it, their folder's name (see brands/example.env; needs python3
 #                    with Pillow for the picture guide)
@@ -40,6 +43,7 @@ WORKSPACE_ID=""
 NO_KEY=0
 TEST_HOME=""
 BRAND_FILE=""
+MODEL=""
 CO_VERSION=""
 NODE_MAJOR=24
 CLAUDE_BASE=https://downloads.claude.ai/claude-code-releases
@@ -56,7 +60,8 @@ for arg in "$@"; do
     --no-key) NO_KEY=1 ;;
     --test-home=*) TEST_HOME="${arg#--test-home=}" ;;
     --brand=*) BRAND_FILE="${arg#--brand=}" ;;
-    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
+    --model=*) MODEL="${arg#--model=}" ;;
+    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -90,10 +95,16 @@ if [ -n "$BRAND_FILE" ]; then
   case "$BRAND_NAME${BRAND_VOLUME:-}" in
     *[\"\'\`\\\$\<\>\{\}/:]*) die "BRAND_NAME and BRAND_VOLUME can't contain \" ' \` \\ \$ < > { } / : (use a curly ’)." ;;
   esac
+  [ -n "$MODEL" ] || MODEL="${BRAND_MODEL:-}"
   APP_NAME="$BRAND_NAME"
   VOLUME_NAME="${BRAND_VOLUME:-$BRAND_NAME}"
   python3 -c 'import PIL' 2>/dev/null || die "--brand needs Pillow for the picture guide: python3 -m pip install pillow"
 fi
+
+case "$MODEL" in
+  ''|claude-[a-z0-9.-]*) ;;
+  *) die "--model should be a Claude model ID like claude-sonnet-5-5." ;;
+esac
 
 # The key first: a build that can't have one should stop before the downloads.
 KEY=""
@@ -234,6 +245,9 @@ if [ -n "$KEY" ]; then
   (
     umask 077
     printf 'ANTHROPIC_API_KEY=%q\n' "$KEY" > "$PAY/secrets.env"
+    if [ -n "$MODEL" ]; then
+      printf 'ANTHROPIC_MODEL=%q\n' "$MODEL" >> "$PAY/secrets.env"
+    fi
     if [ -n "$WORKSPACE_ID" ]; then
       printf 'ANTHROPIC_CUSTOM_HEADERS=%q\n' "anthropic-workspace-id: $WORKSPACE_ID" >> "$PAY/secrets.env"
     fi
@@ -291,4 +305,5 @@ say "Built $DMG, $size"
 say "  $BUILD_ID"
 [ -n "$TEST_HOME" ] && say "  TEST BUILD: sets up in $TEST_HOME, not the real home folder"
 [ "$NO_KEY" = 1 ] && say "  No Claude key inside (--no-key)."
+[ -n "$MODEL" ] && say "  AI model: $MODEL"
 exit 0
