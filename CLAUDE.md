@@ -265,6 +265,24 @@ it lives only on the owner's Mac.
   name, every applet dialog: the build substitutes "JobDesk" in the
   AppleScript's strings, so no handler name may contain "JobDesk"), the disk
   image name, and the picture guide (`make_dmg_guide.py --name --from`).
+- **"Your next step" card** (`ui/brand/jobdesk-guide.tsx`, 2026-10-01).
+  career-ops can score a job, tailor her CV and pre-fill the application, but
+  nothing said which comes next, and Apply stays locked until a tailored CV
+  exists.
+  - The card shows ① Score → ② Tailored CV → ③ Apply, using running jobs
+    (`useJobs`), the tracker (`/api/pipeline`, where the PDF column is ✅/❌),
+    and, on `/pipeline/<n>`, the page's own buttons. Its buttons only press
+    the page's own buttons.
+  - Verified end to end: Evaluate → "See my score" → "Make my tailored CV"
+    (PDF in about 2 min) → Apply unlocked.
+- **Profile from the CV.** career-ops 1.35 refuses to evaluate until
+  `config/profile.yml`, `modes/_profile.md` and `portals.yml` exist: the
+  evaluation agent stops with "setup isn't finished"; 1.34 only warned.
+  - Brand builds call `/api/profile` (career-ops's merge-safe writer) when the
+    CV is saved: name, email, location, target roles.
+  - `dmg-setup.sh` starts the other two from career-ops's own templates, and
+    only when they're missing.
+  - The plain editions still get the profile from the assistant's onboarding.
 - **Her folder** is `~/<BRAND_DATA_DIR>` (via `payload/brand.env`) on a fresh
   install; an existing install keeps its folder.
 - **Uninstall** recognizes a renamed app by its bundle id (`is_jobdesk_app`).

@@ -114,6 +114,9 @@ printf 'Node.js and Claude Code for %s\n' "$want_arch"
 "$H/.jobdesk/tools/bin/claude" --version >/dev/null 2>&1 || fail "claude doesn't run"
 [ -f "$H/career-ops/VERSION" ] || fail "no career-ops folder"
 [ -d "$H/career-ops/node_modules/playwright" ] || fail "career-ops came without its dependencies"
+# career-ops 1.35+ evaluates nothing until these exist (the profile comes from the CV).
+[ -f "$H/career-ops/modes/_profile.md" ] || fail "setup didn't start modes/_profile.md"
+[ -f "$H/career-ops/portals.yml" ] || fail "setup didn't start portals.yml"
 "$H/.jobdesk/shims/git" --version >/dev/null 2>&1 || fail "the git shim doesn't reach this Mac's git"
 if xattr -lr "$H/.jobdesk" 2>/dev/null | grep -q com.apple.quarantine; then fail "files still quarantined"; fi
 
