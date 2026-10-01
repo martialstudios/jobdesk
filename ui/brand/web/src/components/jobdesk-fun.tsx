@@ -11,6 +11,8 @@
 //   { kind: "progress", fraction, found }   the scan's progress (explore-provider)
 //   "done"    the first scan finished, found something or not (explore-provider)
 //   "stop"    something failed: get out of the way so the error shows
+//   "pause"   the resume is read and the quick questions are up: step aside
+//   "resume"  questions answered, searching now: carry on
 
 import { useEffect, useState } from "react";
 import { instrumentSerif } from "@/lib/fonts";
@@ -31,47 +33,89 @@ export function JobdeskFun() {
   const [dots, setDots] = useState(1);
 
   useEffect(() => {
-    let timers: number[] = [];
+    let lineTimer = 0;
+    let revealTimer = 0;
+    let safety = 0;
     let ticker = 0;
     let startedAt = 0;
+    let idx = 0;
+    let shownAt = 0;
+    let pausedAt = 0;
+    let paused = false;
     let revealing = false;
+    let finishWanted = false;
     let scanFraction = -1; // -1 until the scan reports
-    // The scripted lines (all but a last "hold" line) take this long.
-    const scriptMs = JOBDESK_FUN.lines.reduce((ms, [, secs]) => ms + (secs ?? 0) * 1000, 0);
-    const clear = () => {
-      timers.forEach((t) => window.clearTimeout(t));
-      timers = [];
+    const lines = JOBDESK_FUN.lines;
+    const holdIndex = lines.length - 1;
+    const clearAll = () => {
+      window.clearTimeout(lineTimer);
+      window.clearTimeout(revealTimer);
+      window.clearTimeout(safety);
       window.clearInterval(ticker);
-      ticker = 0;
+      lineTimer = revealTimer = safety = ticker = 0;
     };
     const hide = () => {
-      clear();
+      clearAll();
       startedAt = 0;
       revealing = false;
+      finishWanted = false;
       setText(null);
     };
     // Never moves backwards.
     const bump = (next: number) => setPct((p) => Math.max(p, Math.min(100, next)));
     const tick = () => {
       setDots((d) => (d % 3) + 1);
-      if (scanFraction < 0 && startedAt) {
+      if (scanFraction < 0 && startedAt && !paused) {
         bump(READ_SHARE * (1 - Math.exp(-(Date.now() - startedAt) / READ_EASE_MS)));
       }
     };
+    const reveal = () => {
+      revealing = true;
+      window.clearTimeout(lineTimer);
+      bump(100);
+      setText(JOBDESK_FUN.reveal);
+      revealTimer = window.setTimeout(hide, JOBDESK_FUN.revealSeconds * 1000);
+    };
+    // Show line i, then the next one after its time (the last one holds).
+    const show = (i: number) => {
+      idx = Math.min(i, holdIndex);
+      shownAt = Date.now();
+      setText(lines[idx][0]);
+      const secs = lines[idx][1];
+      window.clearTimeout(lineTimer);
+      if (idx < holdIndex && secs !== null) {
+        lineTimer = window.setTimeout(() => !paused && !revealing && show(idx + 1), secs * 1000);
+      } else if (finishWanted) {
+        lineTimer = window.setTimeout(reveal, 1500);
+      }
+    };
     const start = () => {
-      clear();
+      clearAll();
       startedAt = Date.now();
-      revealing = false;
+      paused = revealing = finishWanted = false;
       scanFraction = -1;
       setPct(0);
       setFound(0);
-      let at = 0;
-      for (const [line, secs] of JOBDESK_FUN.lines) {
-        timers.push(window.setTimeout(() => { if (!revealing) setText(line); }, at));
-        at += (secs ?? 0) * 1000;
-      }
-      timers.push(window.setTimeout(hide, SAFETY_MS));
+      show(0);
+      safety = window.setTimeout(hide, SAFETY_MS);
       ticker = window.setInterval(tick, 450);
+    };
+    // Questions between reading the resume and searching: step aside, then
+    // carry on from the next line.
+    const pause = () => {
+      if (!startedAt) return;
+      paused = true;
+      pausedAt = Date.now();
+      window.clearTimeout(lineTimer);
+      setText(null);
+    };
+    const resume = () => {
+      if (!startedAt || !paused) return;
+      paused = false;
+      // A line cut short by the questions (under half its time) plays again.
+      const secs = lines[idx][1];
+      const cut = secs !== null && pausedAt - shownAt < (secs * 1000) / 2;
+      show(cut ? idx : idx + 1);
     };
     const progress = (p: Progress) => {
       if (!startedAt) return;
@@ -79,28 +123,28 @@ export function JobdeskFun() {
       bump(READ_SHARE + (98 - READ_SHARE) * scanFraction);
       setFound((f) => Math.max(f, p.found || 0));
     };
+    // The results are in: once the script reaches its last line, the reveal.
     const finish = () => {
-      if (!startedAt || revealing) return;
-      // Let the script play out, then the reveal line, then the results.
-      const wait = Math.max(0, startedAt + scriptMs + 1500 - Date.now());
-      timers.push(window.setTimeout(() => {
-        revealing = true;
-        bump(100);
-        setText(JOBDESK_FUN.reveal);
-        timers.push(window.setTimeout(hide, JOBDESK_FUN.revealSeconds * 1000));
-      }, wait));
+      if (!startedAt || revealing || paused) return;
+      finishWanted = true;
+      if (idx >= holdIndex) {
+        window.clearTimeout(lineTimer);
+        lineTimer = window.setTimeout(reveal, 1500);
+      }
     };
     const onEvent = (e: Event) => {
       const what = (e as CustomEvent<string | Progress>).detail;
       if (what === "start") start();
       else if (what === "done") finish();
       else if (what === "stop") hide();
+      else if (what === "pause") pause();
+      else if (what === "resume") resume();
       else if (what && typeof what === "object" && what.kind === "progress") progress(what);
     };
     window.addEventListener("jobdesk:fun", onEvent);
     return () => {
       window.removeEventListener("jobdesk:fun", onEvent);
-      clear();
+      clearAll();
     };
   }, []);
 
