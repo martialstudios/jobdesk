@@ -308,6 +308,14 @@ it lives only on the owner's Mac.
   - `dmg-setup.sh` starts the other two from career-ops's own templates, and
     only when they're missing.
   - The plain editions still get the profile from the assistant's onboarding.
+- **Model and cost** (2026-10-01): `build-dmg.sh --model=ID` / `BRAND_MODEL`
+  writes `ANTHROPIC_MODEL` next to the key, and `dmg_server_env` exports it.
+  career-ops never passes `--model`, so it applies to every Claude Code run.
+  The owner chose `claude-sonnet-5-5` and to keep full reports for scoring (a
+  cheaper "quick check" mode was offered and declined).
+  - Measured per job evaluation: about $1.31 and ~6 min on Claude Code's
+    default, versus $0.43 and ~1 min on Sonnet 5.5.
+  - One-time costs: reading a resume ~$0.10, profile personalization ~$0.17.
 - **Her folder** is `~/<BRAND_DATA_DIR>` (via `payload/brand.env`) on a fresh
   install; an existing install keeps its folder.
 - **Uninstall** recognizes a renamed app by its bundle id (`is_jobdesk_app`).

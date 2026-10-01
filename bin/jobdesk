@@ -315,6 +315,8 @@ dmg_server_env() {
     [ -n "${ANTHROPIC_API_KEY:-}" ] && export ANTHROPIC_API_KEY
     # A key that isn't scoped to a workspace has to name one on every request.
     [ -n "${ANTHROPIC_CUSTOM_HEADERS:-}" ] && export ANTHROPIC_CUSTOM_HEADERS
+    # The model the build chose (tools/build-dmg.sh --model), for every AI step.
+    [ -n "${ANTHROPIC_MODEL:-}" ] && export ANTHROPIC_MODEL
   fi
   [ -d "$BROWSERS_DIR" ] && export PLAYWRIGHT_BROWSERS_PATH="$BROWSERS_DIR"
   if [ "$JOBDESK_EDITION" = dmg ]; then

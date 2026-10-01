@@ -41,6 +41,7 @@ KEEP_FILES = {
     "src/lib/run-prompts.mjs",
     "src/app/api/cv/ingest/route.ts",
     "src/app/api/explore/ai/route.ts",
+    "src/app/api/jobdesk/personalize/route.ts",
 }
 KEEP_DIRS = ("src/lib/core/",)
 # "career-ops" as a word: not part of a path, key, flag, package or domain.

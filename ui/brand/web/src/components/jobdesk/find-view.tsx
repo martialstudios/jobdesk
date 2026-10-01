@@ -121,7 +121,7 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
     const next = await add(pickedOffers);
     if (next && score) queueTasks(pickedOffers.map((o) => ({ url: o.url, company: o.company, title: o.title })), false);
     setNotice(
-      `Added ${pickedOffers.length} job${pickedOffers.length === 1 ? "" : "s"} to your list${score ? ", and scoring them now" : ""}.`,
+      `Added ${pickedOffers.length} job${pickedOffers.length === 1 ? "" : "s"} to your list${score ? `, and scoring ${pickedOffers.length === 1 ? "it" : "them"} now` : ""}.`,
     );
     setPicked(new Set());
   };
