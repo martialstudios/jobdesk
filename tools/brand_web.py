@@ -16,8 +16,11 @@ What it does, before `npm run build`:
 - the assistant introduces itself by BRAND_NAME;
 - the CV box gets BRAND_CV_PLACEHOLDER, skips its review step, and drives the
   JobdeskFun overlay (ui/brand/jobdesk-fun.tsx) until the first results;
-- a "Your next step" card (ui/brand/jobdesk-guide.tsx) walks from a job to
-  its score, its tailored CV, and Apply.
+- simple screens replace the menu (ui/brand/web/src, new files only): Find
+  jobs (home), My list (apply to many, score/tailor a group), a job page that
+  leads with strengths, and My resume (form editor, "ask for a change",
+  upload, PDF); career-ops's own screens move under Advanced;
+- applying with no tailored CV attaches a PDF of their own resume.
 
 Every targeted edit must find its anchor, or this exits 1: a career-ops update
 that moves things fails the build instead of shipping a half-branded app.
@@ -87,7 +90,8 @@ def main():
     edit(web, "src/app/api/assistant/route.ts",
          "You are the career-ops assistant —",
          f"You are the {name} assistant (always call this app “{name}”, never by the name of the "
-         "open-source project it's built on) —")
+         "open-source project it's built on; talk like a friendly person, never mention files, YAML, "
+         "Markdown, modes or commands, and call the CV \"your resume\") —")
     # The sidebar and mobile header: the long name at a size that fits.
     edit(web, "src/components/app-shell.tsx",
          "relative -top-px text-2xl font-normal tracking-tight text-landing",
@@ -97,10 +101,55 @@ def main():
     # The version pill + "Report a bug" (a career-ops GitHub link) stays out,
     # and the overlay goes in.
     edit(web, "src/components/app-shell.tsx", "        <BetaBanner />\n",
-         "        <JobdeskFun />\n        <JobdeskGuide />\n")
+         "        <JobdeskFun />\n        <TaskRunner />\n")
     edit(web, "src/components/app-shell.tsx",
          'import { BetaBanner } from "@/components/beta/beta-banner";',
-         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { JobdeskGuide } from "@/components/jobdesk-guide";')
+         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { TaskRunner } from "@/components/jobdesk/tasks";')
+    # career-ops's first-score popup leads with the raw grade; the job page
+    # leads with strengths instead.
+    edit(web, "src/components/app-shell.tsx", "        <FirstScoreView />\n", "")
+    edit(web, "src/components/app-shell.tsx",
+         'import { FirstScoreView } from "@/components/explore/first-score-view";\n', "")
+
+    # The sidebar's worker list (raw scores, token counts, dollar costs) and
+    # usage meter are power-user detail; My list and the job page show
+    # progress in plain words instead.
+    edit(web, "src/components/app-shell.tsx", "          <WorkerPills />\n", "")
+    edit(web, "src/components/app-shell.tsx", "            <UsageMeter />\n", "")
+    edit(web, "src/components/mobile-nav.tsx", "          <WorkerPills />\n", "")
+    edit(web, "src/components/mobile-nav.tsx", "          <UsageMeter />\n", "")
+
+    # The simple screens (ui/brand/web/src, added as new files: career-ops's
+    # own screens stay intact under Advanced). Find jobs is home once there's
+    # a resume; a saved resume lands there.
+    edit(web, "src/lib/nav-items.ts",
+         '''  { href: "/", label: "Today", icon: LayoutDashboard },
+  { href: "/explore", label: "Explore", icon: Compass, chip: "New" },
+  { href: "/pipeline", label: "Pipeline", icon: ListChecks },
+  { href: "/followups", label: "Follow-ups", icon: Send },
+  { href: "/portals", label: "Portals", icon: Radar },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/cv", label: "CV", icon: FileText },
+  { href: "/config", label: "Config", icon: Settings },
+''', '''  { href: "/find", label: "Find jobs", icon: Compass },
+  { href: "/my-list", label: "My list", icon: ListChecks },
+  { href: "/resume", label: "My resume", icon: FileText },
+  { href: "/advanced", label: "Advanced", icon: Settings },
+''')
+    edit(web, "src/app/page.tsx", '  if (phase === "first-run") return <FirstRunHome />;\n',
+         '  if (phase === "first-run") return <FirstRunHome />;\n  redirect("/find");\n')
+    edit(web, "src/app/page.tsx", 'import { FirstRunHome } from "@/components/home/first-run-home";',
+         'import { FirstRunHome } from "@/components/home/first-run-home";\nimport { redirect } from "next/navigation";')
+    edit(web, "src/components/cv/cv-ingest.tsx",
+         '    router.push(`/explore?${qs}${qs ? "&" : ""}run=1`);', '    router.push(`/find?${qs}${qs ? "&" : ""}run=1`);')
+    # Applying to a job with no tailored CV attaches their own resume (a PDF
+    # made from it) rather than nothing.
+    edit(web, "src/app/api/apply/fill/route.ts",
+         "(application ? null : await resolveTailoredCv(companyFromTitle(session?.title))) ?? undefined;",
+         "(application ? null : await resolveTailoredCv(companyFromTitle(session?.title))) ?? (await resumePdf()) ?? undefined;")
+    edit(web, "src/app/api/apply/fill/route.ts",
+         'import { resolveTailoredCv, companyFromTitle } from "@/lib/apply/cv";',
+         'import { resolveTailoredCv, companyFromTitle } from "@/lib/apply/cv";\nimport { resumePdf } from "@/lib/jobdesk/resume-pdf";')
     # The logo: the JobDesk icon instead of "co".
     comark = os.path.join(web, "src/components/co-mark.tsx")
     with open(comark, encoding="utf-8") as f:
@@ -182,6 +231,9 @@ def main():
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: who, email, location: seed?.location || undefined, roles }),
       });
+      // Then, in the background, Claude makes the rest of the profile theirs
+      // (real contact details, targeting that fits): /api/jobdesk/personalize.
+      void fetch("/api/jobdesk/personalize", { method: "POST" }).catch(() => {});
     } catch {
       /* the assistant can still set it up */
     }
@@ -230,10 +282,17 @@ def main():
     # JobDesk's start page shows its title for a moment while it redirects.
     edit(web, "public/jobdesk-start.html", "<title>JobDesk</title>", f"<title>{name}</title>")
 
-    # 2. The overlay and its settings.
-    for component in ("jobdesk-fun.tsx", "jobdesk-guide.tsx"):
-        shutil.copyfile(os.path.join(ROOT, "ui", "brand", component),
-                        os.path.join(web, "src", "components", component))
+    # 2. The simple screens and the overlay: new files only, never over career-ops's.
+    tree = os.path.join(ROOT, "ui", "brand", "web")
+    for dirpath, _, files in os.walk(tree):
+        for fn in files:
+            src = os.path.join(dirpath, fn)
+            rel = os.path.relpath(src, tree)
+            dst = os.path.join(web, rel)
+            if os.path.exists(dst):
+                die(f"{rel} already exists in this career-ops version; JobDesk won't overwrite it")
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(src, dst)
     try:
         dots = json.loads(os.environ.get("BRAND_FUN_DOTS", "[]"))
     except ValueError as e:
