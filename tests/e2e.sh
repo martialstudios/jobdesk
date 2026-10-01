@@ -42,6 +42,14 @@ cleanup() {
 trap cleanup EXIT
 
 port() { cat "$HOME/.jobdesk/run/server.port"; }
+# The job scanner must be reachable: /api/explore answers 400 straight away
+# when the web UI can't find career-ops's scripts (career-ops 1.35 moved that
+# lookup), and streams a scan otherwise.
+scan_code() {
+  curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 8 -X POST \
+    -H 'Content-Type: application/json' -H "Origin: http://127.0.0.1:$(port)" -H 'Sec-Fetch-Site: same-origin' \
+    "http://127.0.0.1:$(port)/api/explore" -d '{"ats":["lever"],"positive":["engineer"],"limitPerAts":1}'
+}
 http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 30 "http://127.0.0.1:$(port)$1"; }
 # shellcheck disable=SC1091  # written by the installer at test time
 config_value() { ( . "$HOME/.jobdesk/config.env"; eval "printf '%s' \"\${$1}\"" ); }
@@ -65,6 +73,7 @@ check_web_ui() {
   [ "$(http_code /pipeline)" = 200 ] || fail "pipeline page"
   [ "$(http_code /config)" = 200 ] || fail "config page"
   curl -fsS "http://127.0.0.1:$(port)/api/doctor" | grep -q '"onboardingNeeded"' || fail "/api/doctor"
+  [ "$(scan_code)" != 400 ] || fail "the web UI can't find career-ops's job scanner"
   printf 'web UI OK on port %s\n' "$(port)"
 }
 

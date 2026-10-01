@@ -355,6 +355,10 @@ cmd_start() {
       PATH="$(server_path)"
       export PATH HOME
       export CAREER_OPS_ROOT="$JOBDESK_CAREER_OPS_DIR"
+      # career-ops 1.35+ looks for its scripts (the job scanner, the doctor) in
+      # CAREER_OPS_CODE_ROOT, else one folder up from the web UI, and JobDesk's
+      # web UI lives apart from the checkout.
+      export CAREER_OPS_CODE_ROOT="$JOBDESK_CAREER_OPS_DIR"
       export NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production
       dmg_server_env
       exec nohup "$NODE_BIN" node_modules/next/dist/bin/next start -H 127.0.0.1 -p "$port" \

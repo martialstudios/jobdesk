@@ -177,6 +177,22 @@ def main():
     }
   }, [phase]);
 ''')
+    # The scan's progress for the overlay's bar: each board counts the same,
+    # a finished board as 1, a running one as companies scanned / total.
+    edit(web, "src/components/explore/explore-provider.tsx",
+         "  const [matchCount, setMatchCount] = useState(0);\n",
+         '''  const [matchCount, setMatchCount] = useState(0);
+  useEffect(() => {
+    const all = Object.values(sources);
+    if (!all.length) return;
+    const fraction = all.reduce((sum, s) => {
+      if (!s) return sum;
+      if (s.state === "swept" || s.state === "noisy") return sum + 1;
+      return sum + (s.total ? Math.min(1, (s.done ?? 0) / s.total) : 0);
+    }, 0) / all.length;
+    window.dispatchEvent(new CustomEvent("jobdesk:fun", { detail: { kind: "progress", fraction, found: matchCount } }));
+  }, [sources, matchCount]);
+''')
     # The home page's intro talks about .md files and setting up an AI in
     # Config; JobDesk has done that, so it just says what to do.
     home = os.path.join(web, "src/components/home/first-run-home.tsx")
@@ -196,12 +212,18 @@ def main():
     # 2. The overlay and its settings.
     shutil.copyfile(os.path.join(ROOT, "ui", "brand", "jobdesk-fun.tsx"),
                     os.path.join(web, "src", "components", "jobdesk-fun.tsx"))
-    fun = {"lines": [[t, s] for t, s in lines], "reveal": reveal, "revealSeconds": reveal_secs}
+    try:
+        dots = json.loads(os.environ.get("BRAND_FUN_DOTS", "[]"))
+    except ValueError as e:
+        die(f"BRAND_FUN_DOTS: {e}")
+    if not isinstance(dots, list) or not all(isinstance(d, str) for d in dots):
+        die("BRAND_FUN_DOTS must be a JSON list of lines")
+    fun = {"lines": [[t, s] for t, s in lines], "reveal": reveal, "revealSeconds": reveal_secs, "dots": dots}
     with open(os.path.join(web, "src", "lib", "jobdesk-brand.ts"), "w", encoding="utf-8") as f:
         f.write("// Written by JobDesk's tools/brand_web.py from the brand file.\n")
         f.write("export const JOBDESK_BRAND_NAME = " + json.dumps(name, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_FUN: { lines: [string, number | null][]; reveal: string; "
-                "revealSeconds: number } = " + json.dumps(fun, ensure_ascii=False) + ";\n")
+                "revealSeconds: number; dots: string[] } = " + json.dumps(fun, ensure_ascii=False) + ";\n")
 
     # 3. Every other visible "career-ops".
     total = 0
