@@ -32,6 +32,7 @@ const forAnyLevel = (f: ExploreFilters): ExploreFilters => ({ ...f, negative: f.
 
 const SEARCH_KEY = "jobdesk:search";
 const NONE: DiscoveredOffer[] = [];
+const AUTO_READS = 24;
 const RESULTS_KEY = "jobdesk:results";
 
 function readStored<T>(key: string): T | null {
@@ -50,7 +51,7 @@ function store(key: string, value: unknown) {
   }
 }
 
-function QuickRead({ s, open, onToggle }: { s: SynopsisState; open: boolean; onToggle: () => void }) {
+function QuickRead({ s, open, onToggle, onRead }: { s: SynopsisState; open: boolean; onToggle: () => void; onRead: () => void }) {
   if (s === "loading")
     return (
       <div className="mt-2 flex items-center gap-2 text-sm text-faint">
@@ -58,7 +59,12 @@ function QuickRead({ s, open, onToggle }: { s: SynopsisState; open: boolean; onT
       </div>
     );
   if (s === null) return <div className="mt-2 text-sm text-faint">Couldn&apos;t read this posting here. Open it to see the details.</div>;
-  if (!s) return null;
+  if (!s)
+    return (
+      <button type="button" onClick={onRead} className="mt-2 inline-flex items-center gap-1 text-sm text-brand">
+        Quick read <ChevronDown className="size-3.5" />
+      </button>
+    );
   const chips = [s.type, s.level && `${s.level} level`, s.where, s.pay].filter(Boolean);
   return (
     <div className="mt-2">
@@ -98,38 +104,13 @@ function QuickRead({ s, open, onToggle }: { s: SynopsisState; open: boolean; onT
   );
 }
 
-const STATES: Record<string, string> = {
-  AL: "alabama", AK: "alaska", AZ: "arizona", AR: "arkansas", CA: "california", CO: "colorado", CT: "connecticut",
-  DE: "delaware", FL: "florida", GA: "georgia", HI: "hawaii", ID: "idaho", IL: "illinois", IN: "indiana", IA: "iowa",
-  KS: "kansas", KY: "kentucky", LA: "louisiana", ME: "maine", MD: "maryland", MA: "massachusetts", MI: "michigan",
-  MN: "minnesota", MS: "mississippi", MO: "missouri", MT: "montana", NE: "nebraska", NV: "nevada", NH: "new hampshire",
-  NJ: "new jersey", NM: "new mexico", NY: "new york", NC: "north carolina", ND: "north dakota", OH: "ohio",
-  OK: "oklahoma", OR: "oregon", PA: "pennsylvania", RI: "rhode island", SC: "south carolina", SD: "south dakota",
-  TN: "tennessee", TX: "texas", UT: "utah", VT: "vermont", VA: "virginia", WA: "washington", WV: "west virginia",
-  WI: "wisconsin", WY: "wyoming", DC: "district of columbia",
-};
-
-/** "Huntington Beach, CA" → a test for "near there, or remote". */
-function nearTest(home: string): ((loc: string) => boolean) | null {
-  const parts = home.split(",").map((p) => p.trim()).filter(Boolean);
-  if (!parts.length) return null;
-  const city = parts[0].toLowerCase();
-  const region = (parts[1] || "").trim();
-  const code = region.toUpperCase();
-  const stateName = STATES[code] || (Object.values(STATES).includes(region.toLowerCase()) ? region.toLowerCase() : "");
-  const stateCode = Object.entries(STATES).find(([, n]) => n === stateName)?.[0] || "";
-  const abroad = /\b(europe|emea|eu|european union|uk|united kingdom|england|london|germany|berlin|france|paris|spain|madrid|belgium|netherlands|amsterdam|ireland|dublin|portugal|poland|italy|sweden|switzerland|india|bangalore|bengaluru|delhi|canada|toronto|vancouver|australia|sydney|brazil|mexico|singapore|japan|tokyo|korea|seoul|apac|latam|israel|philippines|argentina|colombia)\b/;
-  const stateside = /\b(us|usa|u\.s\.|united states|america|north america)\b/;
-  return (loc: string) => {
-    const l = ` ${loc.toLowerCase()} `;
-    if (city && l.includes(city)) return true;
-    // Remote counts, unless it's remote somewhere else ("Remote, Germany").
-    if (/remote|anywhere|distributed/.test(l)) return !abroad.test(l) || stateside.test(l);
-    if (stateName && l.includes(stateName)) return true;
-    if (stateCode && new RegExp(`[\\s,(]${stateCode}[\\s,)]`, "i").test(` ${loc} `)) return true;
-    return false;
-  };
-}
+// Where she'll work: within N miles of home (0: anywhere in the US), and
+// remote jobs in the US or not. Set on the questions page, changeable here.
+type Area = { miles: number; remote: boolean };
+const AREA_KEY = "jobdesk:area";
+const DEFAULT_AREA: Area = { miles: 25, remote: true };
+const RADII = [10, 25, 50, 100, 0];
+type Where = { us: boolean | null; remote: boolean; miles: number | null };
 
 function ago(date: string): string {
   if (!date) return "";
@@ -146,7 +127,9 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
   const [me, setMe] = useState<{ hasCv: boolean; location: string; answered: boolean } | null>(null);
   const [stored, setStored] = useState<DiscoveredOffer[]>([]);
   const [opened, setOpened] = useState<Set<string>>(new Set());
-  const [nearOnly, setNearOnly] = useState(true);
+  const [area, setAreaState] = useState<Area>(DEFAULT_AREA);
+  const [places, setPlaces] = useState<Record<string, Where>>({});
+  const [showFar, setShowFar] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState("");
@@ -158,6 +141,7 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
       .then((d) => setMe({ hasCv: !!d.hasCv, location: String(d.location || ""), answered: !!d.answered }))
       .catch(() => setMe({ hasCv: true, location: "", answered: true }));
     setStored(readStored<{ offers: DiscoveredOffer[] }>(RESULTS_KEY)?.offers ?? []);
+    setAreaState({ ...DEFAULT_AREA, ...(readStored<Area>(AREA_KEY) ?? {}) });
   }, []);
 
   // Only "Find my jobs" on the questions page (?run=1) starts a search on its
@@ -195,7 +179,11 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
   }, [ex.running, ex.phase, ex.offers]);
 
   const inList = useMemo(() => new Set(list.map((i) => i.url)), [list]);
-  const near = useMemo(() => (me?.location ? nearTest(me.location) : null), [me]);
+  const setArea = (a: Area) => {
+    setAreaState(a);
+    store(AREA_KEY, a);
+    setShowFar(false);
+  };
   // Before any search this visit: the last results.
   const offers = ex.phase === "idle" && !ex.running ? stored : ex.offers;
   const sorted = useMemo(
@@ -205,16 +193,55 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
       ),
     [offers],
   );
-  const local = useMemo(() => (near ? sorted.filter((o) => near(o.location || "")) : sorted), [sorted, near]);
-  // Too few nearby: show everything rather than an empty page.
-  const pool = nearOnly && near && local.length >= 5 ? local : sorted;
+  // Where each job is (/api/jobdesk/where): asked once per location.
+  const locKey = useMemo(() => Array.from(new Set(offers.map((o) => o.location || ""))).sort().join("\n"), [offers]);
+  useEffect(() => {
+    if (!me) return;
+    const missing = locKey.split("\n").filter((l) => !(l in places));
+    if (!missing.length) return;
+    fetch("/api/jobdesk/where", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ home: me.location, locations: missing }),
+    })
+      .then((r) => r.json())
+      .then((d) => d.items && setPlaces((p) => ({ ...p, ...d.items })))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locKey, me]);
+  const placed = (o: DiscoveredOffer): Where | undefined => places[o.location || ""];
+  // US only, always. In the area: within the miles, or remote in the US (if
+  // they're open to remote), or anywhere in the US when that's the setting.
+  const inArea = (w: Where) =>
+    w.us !== false &&
+    ((w.miles !== null && (area.miles === 0 || w.miles <= area.miles)) ||
+      (area.remote && w.remote) ||
+      (area.miles === 0 && w.us === true));
+  const abroad = sorted.filter((o) => placed(o)?.us === false).length;
+  const local = sorted.filter((o) => {
+    const w = placed(o);
+    return w ? inArea(w) : false;
+  });
+  // In the US (or unclear) but further away: behind "Show more elsewhere".
+  const far = sorted.filter((o) => {
+    const w = placed(o);
+    return w ? w.us !== false && !inArea(w) : false;
+  });
+  const pool = showFar ? [...local, ...far] : local;
   const main = pool.filter((o) => o.fit?.band !== "weak");
   const more = pool.filter((o) => o.fit?.band === "weak");
   const shown = showMore ? [...main, ...more] : main;
   const scanning = ex.running || ex.phase === "casting" || ex.phase === "scanning";
   // After the search: while it runs, results stream in one at a time and
   // would each become their own request.
-  const reads = useSynopses(scanning ? NONE : shown);
+  // Read automatically: the first jobs on the page (a long list would cost
+  // a summary per job); the rest when asked ("Quick read").
+  const [extra, setExtra] = useState<Set<string>>(new Set());
+  const toRead = useMemo(
+    () => (scanning ? NONE : [...shown.slice(0, AUTO_READS), ...shown.slice(AUTO_READS).filter((o) => extra.has(o.url))]),
+    [scanning, shown, extra],
+  );
+  const reads = useSynopses(toRead);
 
   const toggle = (url: string) =>
     setPicked((p) => {
@@ -341,14 +368,34 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
               />
               Select all {selectable.length}
             </label>
-            {near && (
-              <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-muted">
-                <input type="checkbox" className="size-4 accent-[hsl(26_73%_51%)]" checked={nearOnly} onChange={() => setNearOnly((v) => !v)} />
-                <MapPin className="size-3.5" /> Only near {me?.location.split(",")[0]} or remote
-                {nearOnly && local.length < 5 && <span className="text-faint">(few nearby, showing all)</span>}
+            <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
+              <MapPin className="size-3.5" />
+              <select
+                value={area.miles}
+                onChange={(e) => setArea({ ...area, miles: Number(e.target.value) })}
+                className="rounded-full border border-border bg-transparent px-2.5 py-1 text-foreground"
+                aria-label="How far from home"
+              >
+                {RADII.map((m) => (
+                  <option key={m} value={m}>
+                    {m ? `Within ${m} miles` : "Anywhere in the US"}
+                  </option>
+                ))}
+              </select>
+              {area.miles > 0 && <span>of {me?.location.split(",")[0] || "home"}</span>}
+              <label className="ml-1 inline-flex cursor-pointer items-center gap-1.5">
+                <input type="checkbox" className="size-4 accent-[hsl(26_73%_51%)]" checked={area.remote} onChange={() => setArea({ ...area, remote: !area.remote })} />
+                Remote (US)
               </label>
-            )}
+            </div>
           </div>
+          {abroad > 0 && <p className="mt-2 text-xs text-faint">Left out {abroad} outside the US.</p>}
+          {sorted.length > 0 && local.length === 0 && !showFar && (
+            <p className="mt-4 rounded-xl bg-surface p-4 text-sm text-foreground">
+              None of these are within {area.miles} miles{area.remote ? " or remote" : ""}. Try a wider distance, or press{" "}
+              <strong>Search again</strong>: every search checks a different batch of companies.
+            </p>
+          )}
 
           <ul className="mt-4 flex flex-col gap-2.5">
             {shown.map((o) => {
@@ -393,11 +440,12 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
                         )}
                       </div>
                       <div className="mt-0.5 truncate text-sm text-muted">
-                        {[o.company, o.location, ago(o.postedAt)].filter(Boolean).join(" · ")}
+                        {[o.company, o.location, placed(o)?.miles != null ? `${placed(o)!.miles} mi away` : "", ago(o.postedAt)].filter(Boolean).join(" · ")}
                       </div>
                     </button>
                     <QuickRead
                       s={reads[o.url]}
+                      onRead={() => setExtra((x) => new Set(x).add(o.url))}
                       open={opened.has(o.url)}
                       onToggle={() =>
                         setOpened((p) => {
@@ -416,6 +464,11 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
               );
             })}
           </ul>
+          {far.length > 0 && !showFar && (
+            <button onClick={() => setShowFar(true)} className="mt-4 mr-4 text-sm text-muted underline-offset-2 hover:underline">
+              Show {far.length} more elsewhere in the US
+            </button>
+          )}
           {more.length > 0 && !showMore && (
             <button onClick={() => setShowMore(true)} className="mt-4 text-sm text-muted underline-offset-2 hover:underline">
               Show {more.length} more that match less closely

@@ -31,6 +31,26 @@ export function WelcomeView() {
   const [location, setLocation] = useState("");
   const [remote, setRemote] = useState(true);
   const [skipSenior, setSkipSenior] = useState(true);
+  const [miles, setMiles] = useState(25);
+  const [found, setFound] = useState<boolean | null>(null);
+  // Distances need a town the app knows: say so if it doesn't.
+  useEffect(() => {
+    if (!location.trim()) {
+      setFound(null);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      fetch("/api/jobdesk/where", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ home: location, locations: [] }),
+      })
+        .then((r) => r.json())
+        .then((d) => setFound(!!d.home))
+        .catch(() => setFound(null));
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [location]);
   const [minPay, setMinPay] = useState("");
   const [maxPay, setMaxPay] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,6 +72,12 @@ export function WelcomeView() {
         if (d.payMin) setMinPay(String(d.payMin));
         if (d.payMax) setMaxPay(String(d.payMax));
         if (d.remote === "On-site only") setRemote(false);
+        try {
+          const a = JSON.parse(localStorage.getItem("jobdesk:area") || "null");
+          if (a && typeof a.miles === "number") setMiles(a.miles);
+        } catch {
+          /* the default */
+        }
       })
       .catch(() => {
         setRoles(fromCv);
@@ -100,6 +126,13 @@ export function WelcomeView() {
       }).catch(() => {});
     } catch {
       /* searching still works */
+    }
+    // Find jobs shows jobs within this many miles (0: anywhere in the US),
+    // plus remote US jobs when they're open to remote.
+    try {
+      localStorage.setItem("jobdesk:area", JSON.stringify({ miles, remote }));
+    } catch {
+      /* Find jobs uses its default */
     }
     if (first) window.dispatchEvent(new CustomEvent("jobdesk:fun", { detail: "resume" }));
     const filters = {
@@ -164,6 +197,22 @@ export function WelcomeView() {
       <section className="mt-8">
         <h2 className="font-medium text-foreground">Where?</h2>
         <input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="City, State" className={`${box} mt-3`} />
+        <label className="mt-3 flex flex-wrap items-center gap-2 text-foreground">
+          How far would you go?
+          <select value={miles} onChange={(e) => setMiles(Number(e.target.value))} className="rounded-full border border-border bg-transparent px-3 py-1.5">
+            {[10, 25, 50, 100, 0].map((m) => (
+              <option key={m} value={m}>
+                {m ? `Up to ${m} miles` : "Anywhere in the US"}
+              </option>
+            ))}
+          </select>
+        </label>
+        {found === false && miles > 0 && (
+          <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+            I don&apos;t know that town yet, so distances won&apos;t work. Try it as &ldquo;City, ST&rdquo;, like Huntington Beach, CA.
+          </p>
+        )}
+        <p className="mt-1 text-sm text-faint">Only jobs in the US are shown.</p>
         <label className="mt-3 inline-flex cursor-pointer items-center gap-2.5 text-foreground">
           <input type="checkbox" className="size-4 accent-[hsl(26_73%_51%)]" checked={remote} onChange={() => setRemote((v) => !v)} />
           I&apos;m open to remote jobs too
