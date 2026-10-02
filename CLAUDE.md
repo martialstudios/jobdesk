@@ -15,6 +15,10 @@ application form for you to review, and tracks every application.
 
 ## ⏱️ Status (read first)
 
+- **Picking this up? Read `docs/HANDOFF.md` first** (2026-10-02): what Asal's
+  build contains, where each feature lives, how to build/test/publish, asset
+  provenance, and the open items.
+
 - **0.2.0 adds the DMG edition** (2026-09-28; see "The DMG edition" below).
   - `tests/dmg-e2e.sh` passes on an Apple Silicon Mac for both halves, arm64
     and x64 (the latter under Rosetta). The real app was also driven by hand:
@@ -621,4 +625,5 @@ round found nothing.
   tokens. It would need another web UI patch, and it's a cost decision for the owner.
 - Optional Playwright MCP setup, for people who also use career-ops's CLI
   `apply` mode.
-- Checking for updates from the app itself.
+- ~~Checking for updates from the app itself.~~ Done (2026-10-02,
+  `macos/updater.mjs`, `tools/publish-update.sh`; see `docs/HANDOFF.md`).
