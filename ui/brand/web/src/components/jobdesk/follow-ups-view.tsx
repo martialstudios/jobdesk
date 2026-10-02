@@ -48,6 +48,23 @@ const OUTCOMES: { key: NonNullable<ListItem["outcome"]>; label: string }[] = [
 // career-ops's tracker states, for a job that was scored.
 const TRACKER: Record<string, string> = { interview: "Interview", offer: "Offer", rejected: "Rejected", waiting: "Applied" };
 
+type Order = "newest" | "oldest" | "company" | "next";
+type Status = "waiting" | "interview" | "offer" | "rejected";
+const ORDERS: { key: Order; label: string }[] = [
+  { key: "newest", label: "Newest first" },
+  { key: "oldest", label: "Oldest first" },
+  { key: "next", label: "Next follow-up" },
+  { key: "company", label: "Company A–Z" },
+];
+const STATUS_LABEL: Record<Status, string> = { waiting: "Waiting", interview: "Interview", offer: "Offer", rejected: "Didn't get it" };
+const statusOf = (i: ListItem): Status => (i.outcome && i.outcome !== "waiting" ? i.outcome : "waiting");
+const STATUS_STYLE: Record<Status, string> = {
+  waiting: "bg-surface text-muted",
+  interview: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  offer: "bg-emerald-600 text-white",
+  rejected: "bg-surface text-faint line-through",
+};
+
 type Draft = { url: string; subject: string; body: string } | { url: string; loading: true } | { url: string; error: string };
 
 export function FollowUpsView() {
@@ -56,6 +73,10 @@ export function FollowUpsView() {
   const [notesOpen, setNotesOpen] = useState<Set<string>>(new Set());
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [showClosed, setShowClosed] = useState(false);
+  const [view, setView] = useState<"next" | "all">("next");
+  const [order, setOrder] = useState<Order>("newest");
+  const [only, setOnly] = useState<Status | "all">("all");
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // Notes save a moment after they stop typing.
   const noteTimers = useRef<Record<string, number>>({});
@@ -243,6 +264,76 @@ export function FollowUpsView() {
     );
   };
 
+  // "All applications": one list, in the order they choose, by status.
+  const counts = useMemo(() => {
+    const c: Record<Status | "all", number> = { all: applied.length, waiting: 0, interview: 0, offer: 0, rejected: 0 };
+    for (const i of applied) c[statusOf(i)]++;
+    return c;
+  }, [applied]);
+  const everything = useMemo(() => {
+    const at = (i: ListItem) => i.appliedAt ?? i.addedAt;
+    const list = applied.filter((i) => only === "all" || statusOf(i) === only);
+    return [...list].sort((a, b) =>
+      order === "newest" ? at(b) - at(a)
+      : order === "oldest" ? at(a) - at(b)
+      : order === "company" ? a.company.localeCompare(b.company) || at(b) - at(a)
+      : planFor(a).due - planFor(b).due,
+    );
+  }, [applied, order, only]);
+
+  const allView = (
+    <section className="mt-6">
+      <div className="flex flex-wrap items-center gap-2">
+        {(["all", "waiting", "interview", "offer", "rejected"] as const).map((k) => (
+          <button
+            key={k}
+            onClick={() => setOnly(k)}
+            className={`rounded-full px-3 py-1 text-sm ${only === k ? "bg-brand text-brand-foreground" : "border border-border text-muted hover:text-foreground"}`}
+          >
+            {k === "all" ? "All" : STATUS_LABEL[k]} <span className="opacity-70">{counts[k]}</span>
+          </button>
+        ))}
+        <select
+          value={order}
+          onChange={(e) => setOrder(e.target.value as Order)}
+          aria-label="Order"
+          className="ml-auto rounded-full border border-border bg-transparent px-3 py-1.5 text-sm text-foreground"
+        >
+          {ORDERS.map((o) => (
+            <option key={o.key} value={o.key}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+      <ul className="mt-4 divide-y divide-border overflow-hidden rounded-2xl border border-border" style={{ background: "var(--bg)" }}>
+        {everything.map((i) => {
+          const st = statusOf(i);
+          const plan = planFor(i);
+          const open = expanded === i.url;
+          return (
+            <li key={i.url}>
+              <button onClick={() => setExpanded(open ? null : i.url)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-surface/60">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-foreground">{i.title}</div>
+                  <div className="truncate text-sm text-muted">
+                    {i.company} · applied {i.appliedAt ? day(i.appliedAt) : "recently"}
+                    {(i.followUps?.length ?? 0) > 0 && ` · followed up ${i.followUps!.length}×`}
+                  </div>
+                </div>
+                <div className="hidden shrink-0 text-right text-xs text-faint sm:block">
+                  {st === "waiting" && (plan.stage === "due" ? "Follow up now" : plan.stage === "quiet" ? "Gone quiet" : `Follow up ${day(plan.due)}`)}
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs ${STATUS_STYLE[st]}`}>{STATUS_LABEL[st]}</span>
+                <ChevronDown className={`size-4 shrink-0 text-faint transition ${open ? "rotate-180" : ""}`} />
+              </button>
+              {open && <ul className="px-3 pb-3">{card(i)}</ul>}
+            </li>
+          );
+        })}
+        {everything.length === 0 && <li className="px-4 py-6 text-sm text-muted">None with this status.</li>}
+      </ul>
+    </section>
+  );
+
   const section = (title: string, list: ListItem[], hint?: string) =>
     list.length > 0 && (
       <section className="mt-10">
@@ -258,6 +349,20 @@ export function FollowUpsView() {
     <div className="mx-auto max-w-3xl px-5 pb-24 pt-10 md:px-8">
       <h1 className={`${instrumentSerif.className} text-4xl text-landing md:text-5xl`}>Follow-ups</h1>
       <p className="mt-2 text-muted">Every job you&apos;ve applied to, and the right time to nudge them.</p>
+      {applied.length > 0 && (
+        <div className="mt-5 inline-flex rounded-full border border-border p-1 text-sm">
+          {([["next", "By next step"], ["all", `All applications (${applied.length})`]] as const).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setView(k)}
+              className={`rounded-full px-3.5 py-1.5 ${view === k ? "bg-brand text-brand-foreground" : "text-muted hover:text-foreground"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {view === "all" && applied.length > 0 && allView}
 
       {!loaded && (
         <p className="mt-8 flex items-center gap-2 text-muted">
@@ -272,16 +377,16 @@ export function FollowUpsView() {
         </div>
       )}
 
-      {heard.length > 0 && (
+      {view === "next" && heard.length > 0 && (
         <div className="mt-8 flex items-center gap-2 rounded-2xl bg-emerald-500/10 p-4 text-emerald-800 dark:text-emerald-200">
           <PartyPopper className="size-5" /> {heard.length} heard back with good news. Keep going!
         </div>
       )}
-      {section("Time to follow up", due, "A week has passed with no news.")}
-      {section("Waiting to hear back", waiting)}
-      {section("Heard back", heard)}
-      {section("Gone quiet", quiet)}
-      {closed.length > 0 && (
+      {view === "next" && section("Time to follow up", due, "A week has passed with no news.")}
+      {view === "next" && section("Waiting to hear back", waiting)}
+      {view === "next" && section("Heard back", heard)}
+      {view === "next" && section("Gone quiet", quiet)}
+      {view === "next" && closed.length > 0 && (
         <section className="mt-10">
           <button onClick={() => setShowClosed((v) => !v)} className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground">
             {showClosed ? "Hide" : "Show"} {closed.length} that didn&apos;t work out <ChevronDown className={`size-3.5 transition ${showClosed ? "rotate-180" : ""}`} />

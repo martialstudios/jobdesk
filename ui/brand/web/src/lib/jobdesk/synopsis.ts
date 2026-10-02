@@ -24,7 +24,17 @@ export type Synopsis = {
   where: string;
   pay: string;
   fit: string;
+  /** About the employer, from the posting: what they do, size or stage, mission. */
+  company: string;
+  /** Who they serve or what they make, in a few words ("Personal finance app"). */
+  industry: string;
+  /** Benefits and perks the posting states. */
+  perks: string[];
+  /** Notes like "Small team" or "Fully remote company", only when stated. */
+  culture: string[];
 };
+// v2 added the company read; older cached summaries are read again.
+const VERSION = 2;
 export type SynopsisJob = { url: string; title: string; company: string; location?: string };
 /** null: the posting couldn't be read. */
 export type SynopsisResult = Synopsis | null;
@@ -46,7 +56,7 @@ const texts = (v: unknown, max: number, count: number) =>
 export function cleanSynopsis(raw: unknown): Synopsis | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  const summary = text(o.summary, 240);
+  const summary = text(o.summary, 320);
   if (!summary) return null;
   const known = (v: unknown) => {
     const t = text(v, 60);
@@ -61,6 +71,10 @@ export function cleanSynopsis(raw: unknown): Synopsis | null {
     where: known(o.where),
     pay: known(o.pay),
     fit: text(o.fit, 320),
+    company: text(o.company, 520),
+    industry: text(o.industry, 60),
+    perks: texts(o.perks, 90, 6),
+    culture: texts(o.culture, 90, 3),
   };
 }
 
@@ -82,6 +96,7 @@ export function readCached(url: string): { result: SynopsisResult } | undefined 
     const d = JSON.parse(fs.readFileSync(cacheFile(url), "utf8"));
     // The fit line is about their resume: a newer resume, a new read.
     if (d.result !== null && resumeChangedAt() > Date.parse(d.at)) return undefined;
+    if (d.result !== null && d.v !== VERSION) return undefined;
     // An unreadable posting is retried after a day; a summary is kept.
     if (d.result === null && Date.now() - Date.parse(d.at) > 86_400_000) return undefined;
     return { result: d.result === null ? null : cleanSynopsis(d.result) };
@@ -93,7 +108,7 @@ export function readCached(url: string): { result: SynopsisResult } | undefined 
 function writeCached(url: string, result: SynopsisResult) {
   const file = cacheFile(url);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ url, at: new Date().toISOString(), result }));
+  fs.writeFileSync(file, JSON.stringify({ url, v: VERSION, at: new Date().toISOString(), result }));
 }
 
 function run(bin: string, args: string[], opts: { cwd: string; timeoutMs: number; env?: NodeJS.ProcessEnv }): Promise<string> {
@@ -145,18 +160,25 @@ export function synopsisPrompt(jobs: { job: SynopsisJob; posting: string }[]): s
     "quick, plain-English read. Use only what the posting says; never invent pay, perks or requirements.",
     "",
     "For each job give:",
-    "- summary: one sentence (at most 25 words) saying what the job actually is, in everyday words.",
+    "- summary: one or two sentences (at most 40 words) saying what the job actually is and why it matters there,",
+    "  in everyday words.",
     "- doing: 2 or 3 short phrases for what they'd spend their days on.",
     "- wants: 2 or 3 short phrases for what the company asks for, the must-haves first.",
     "- level: Entry, Junior, Mid, Senior, Lead or Unclear.",
     "- type: Full-time, Part-time, Contract, Internship or Unclear.",
     "- where: like \"Remote (US)\", \"On-site · Austin, TX\" or \"Hybrid · London\".",
     "- pay: only if the posting states it, like \"$55K–65K a year\" or \"$22/hour\"; otherwise \"\".",
+    "- company: 2 or 3 sentences (at most 70 words) about the employer from the posting: what they make or do and",
+    "  for whom, how big or what stage if stated (\"a 40-person startup\", \"a public company\", funding), and their",
+    "  mission or what they're known for. Only what the posting says; \"\" if it says nothing about them.",
+    "- industry: a few words for what they're in, like \"Personal finance app\" or \"Children's books\".",
+    "- perks: up to 6 short benefits the posting states (health insurance, 401k match, remote stipend, PTO days).",
+    "- culture: up to 3 short notes on how they work, only if stated (\"Fully remote team\", \"Small team\", \"4-day week\").",
     "- fit: one honest, kind sentence (at most 22 words) on how it fits this person, from their resume and goal",
     "  below: what carries over, or that it's a stretch. Speak to them as \"you\".",
     "",
     "Reply with ONLY this JSON between the lines <<<JSON and JSON>>>, one entry per job, by its number:",
-    '{"1": {"summary": "", "doing": [], "wants": [], "level": "", "type": "", "where": "", "pay": "", "fit": ""}}',
+    '{"1": {"summary": "", "doing": [], "wants": [], "level": "", "type": "", "where": "", "pay": "", "company": "", "industry": "", "perks": [], "culture": [], "fit": ""}}',
     "",
     about(),
     "",
