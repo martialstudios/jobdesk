@@ -27,6 +27,8 @@ export function WelcomeView() {
   const [goal, setGoal] = useState<DreamGoal | null>(null);
   const [plan, setPlan] = useState<DreamPlan | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // The first time: the dream job is its own step, before the rest.
+  const [step, setStep] = useState<"dream" | "form">("form");
   const [newRole, setNewRole] = useState("");
   const [location, setLocation] = useState("");
   const [remote, setRemote] = useState(true);
@@ -57,7 +59,8 @@ export function WelcomeView() {
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
-    setFirst(sp.get("first") === "1");
+    const isFirst = sp.get("first") === "1";
+    setFirst(isFirst);
     const fromCv = (sp.get("q") || "").split(",").map((r) => r.trim()).filter(Boolean);
     fetch("/api/jobdesk/me")
       .then((r) => r.json())
@@ -67,6 +70,7 @@ export function WelcomeView() {
         // With a dream plan, the profile's roles are the plan's, not the resume's.
         if (!d.goal || fromCv.length) setResumeRoles(initial);
         setGoal(d.goal || null);
+        if (isFirst && !d.goal) setStep("dream");
         setPlan(d.goal?.plan || null);
         setLocation(String(d.location || ""));
         if (d.payMin) setMinPay(String(d.payMin));
@@ -86,8 +90,10 @@ export function WelcomeView() {
       .finally(() => setLoaded(true));
   }, []);
 
-  const applyPlan = (next: DreamPlan | null) => {
+  const applyPlan = (next: DreamPlan | null, dream?: string) => {
     setPlan(next);
+    // Kept so the dream shows (and stays) when moving between the two steps.
+    setGoal(next ? { dream: dream || goal?.dream || "", answers: goal?.answers || [], plan: next, at: new Date().toISOString() } : null);
     if (next) setRoles(Array.from(new Set([...next.roles, ...next.dream])));
     else if (resumeRoles.length) setRoles(resumeRoles);
   };
@@ -151,8 +157,36 @@ export function WelcomeView() {
     router.push(`/find?${qs}${qs ? "&" : ""}run=1`);
   };
 
+  if (loaded && step === "dream") {
+    return (
+      <div className="mx-auto max-w-2xl px-5 pb-24 pt-12 md:px-8">
+        <p className="text-sm font-medium text-brand">Step 1 of 2</p>
+        <h1 className={`${instrumentSerif.className} mt-1 text-4xl text-landing md:text-5xl`}>What job would you love?</h1>
+        <p className="mt-2 text-muted">
+          Tell me the job you dream about, even if your resume doesn&apos;t show it yet. I&apos;ll ask a few quick questions, then search for
+          the jobs that lead there and put the best fits for your dream first.
+        </p>
+        <DreamCard goal={goal} onPlan={applyPlan} big />
+        <div className="mt-8 flex flex-wrap items-center gap-4">
+          {plan && (
+            <button onClick={() => setStep("form")}
+              className="inline-flex items-center gap-2 rounded-full bg-brand px-6 py-3 font-medium text-brand-foreground hover:bg-brand-200">
+              Next <ArrowRight className="size-4" />
+            </button>
+          )}
+          {!plan && (
+            <button onClick={() => setStep("form")} className="text-sm text-muted underline-offset-2 hover:text-foreground hover:underline">
+              Skip this, just use my resume
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl px-5 pb-24 pt-12 md:px-8">
+      {first && <p className="text-sm font-medium text-brand">Step 2 of 2</p>}
       <h1 className={`${instrumentSerif.className} text-4xl text-landing md:text-5xl`}>
         {first ? "A few quick questions" : "What you're looking for"}
       </h1>
@@ -160,7 +194,12 @@ export function WelcomeView() {
         {first ? "I filled these in from your resume. Fix anything that's off, then I'll find your jobs." : "Change anything, and I'll search again."}
       </p>
 
-      {loaded && <DreamCard goal={goal} onPlan={applyPlan} />}
+      {loaded &&
+        (plan ? (
+          <DreamCard goal={goal} onPlan={applyPlan} compact onChange={() => setStep("dream")} />
+        ) : (
+          <DreamCard goal={goal} onPlan={applyPlan} />
+        ))}
 
       <section className="mt-8">
         <h2 className="font-medium text-foreground">What kinds of jobs?</h2>

@@ -24,11 +24,25 @@ async function post(body: object) {
   return d;
 }
 
-export function DreamCard({ goal, onPlan }: { goal: DreamGoal | null; onPlan: (plan: DreamPlan | null) => void }) {
+export function DreamCard({
+  goal,
+  onPlan,
+  big = false,
+  compact = false,
+  onChange,
+}: {
+  goal: DreamGoal | null;
+  onPlan: (plan: DreamPlan | null, dream?: string) => void;
+  big?: boolean;
+  /** After the dream step: just the dream in a line, and a way to change it. */
+  compact?: boolean;
+  onChange?: () => void;
+}) {
   const [dream, setDream] = useState(goal?.dream || "");
   const [stage, setStage] = useState<Stage>(goal ? { kind: "plan", plan: goal.plan } : { kind: "idle" });
   const [picked, setPicked] = useState<Record<number, string[]>>({});
   const [other, setOther] = useState<Record<number, string>>({});
+  const [extra, setExtra] = useState("");
   const [error, setError] = useState("");
 
   const start = async () => {
@@ -48,13 +62,14 @@ export function DreamCard({ goal, onPlan }: { goal: DreamGoal | null; onPlan: (p
   const finish = async (ask: DreamAsk) => {
     const answers = ask.questions
       .map((q, i) => ({ q: q.q, a: [...(picked[i] || []), other[i]?.trim()].filter(Boolean).join("; ") }))
-      .filter((x) => x.a);
+      .filter((x) => x.a)
+      .concat(extra.trim() ? [{ q: "Anything else about the job you want?", a: extra.trim() }] : []);
     setError("");
     setStage({ kind: "thinking", line: "Finding the jobs that lead there…" });
     try {
       const { plan } = (await post({ step: "plan", dream, answers })) as { plan: DreamPlan };
       setStage({ kind: "plan", plan });
-      onPlan(plan);
+      onPlan(plan, dream);
     } catch (e) {
       setError((e as Error).message);
       setStage({ kind: "questions", ask });
@@ -74,18 +89,34 @@ export function DreamCard({ goal, onPlan }: { goal: DreamGoal | null; onPlan: (p
       return { ...p, [i]: next };
     });
 
+  if (compact && stage.kind === "plan") {
+    return (
+      <section className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-brand/30 bg-brand/5 px-5 py-3">
+        <Sparkles className="size-4 text-brand" />
+        <span className="text-foreground">
+          Your dream job: <span className="font-medium">{dream || goal?.dream}</span>
+        </span>
+        <button onClick={() => (onChange ? onChange() : reset())} className="text-sm text-muted underline-offset-2 hover:text-foreground hover:underline">
+          Change
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section className="mt-8 rounded-2xl border border-brand/30 bg-brand/5 p-5">
       <h2 className="flex items-center gap-2 font-medium text-foreground">
-        <Sparkles className="size-4 text-brand" /> Dreaming of something different?
+        <Sparkles className="size-4 text-brand" /> {big ? "Your dream job" : "Dreaming of something different?"}
       </h2>
 
       {stage.kind === "idle" && (
         <>
-          <p className="mt-1 text-sm text-muted">
-            Your resume doesn&apos;t have to show it yet. Tell me the job you&apos;d love, and I&apos;ll work out the jobs that get you there.
-          </p>
-          <textarea value={dream} onChange={(e) => setDream(e.target.value)} rows={2}
+          {!big && (
+            <p className="mt-1 text-sm text-muted">
+              Your resume doesn&apos;t have to show it yet. Tell me the job you&apos;d love, and I&apos;ll work out the jobs that get you there.
+            </p>
+          )}
+          <textarea value={dream} onChange={(e) => setDream(e.target.value)} rows={big ? 3 : 2} autoFocus={big}
             placeholder="Like: working in book publishing, or designing apps" className={`${box} mt-3 resize-none`} />
           <button onClick={() => void start()} disabled={!dream.trim()}
             className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground hover:bg-brand-200 disabled:opacity-50">
@@ -120,9 +151,15 @@ export function DreamCard({ goal, onPlan }: { goal: DreamGoal | null; onPlan: (p
                 })}
               </div>
               <input value={other[i] || ""} onChange={(e) => setOther({ ...other, [i]: e.target.value })}
-                placeholder="Or say it your way" className={`${box} mt-2 text-sm`} />
+                placeholder="Or type your own answer" aria-label={`Your own answer: ${q.q}`} className={`${box} mt-2 text-sm`} />
             </div>
           ))}
+          <div className="mt-6">
+            <p className="font-medium text-foreground">Anything else about the job you want?</p>
+            <p className="text-xs text-faint">In your own words: the kind of place, the people, what a great day looks like. Optional.</p>
+            <textarea value={extra} onChange={(e) => setExtra(e.target.value)} rows={2}
+              placeholder="Like: somewhere small and creative, where I get to read a lot" className={`${box} mt-2 resize-none text-sm`} />
+          </div>
           <div className="mt-5 flex items-center gap-4">
             <button onClick={() => void finish(stage.ask)}
               className="inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground hover:bg-brand-200">
@@ -137,7 +174,9 @@ export function DreamCard({ goal, onPlan }: { goal: DreamGoal | null; onPlan: (p
         <div className="mt-2">
           {stage.plan.path && <p className="text-foreground">{stage.plan.path}</p>}
           <p className="mt-3 text-sm text-muted">
-            I&apos;ve put the jobs that lead there under &ldquo;What kinds of jobs?&rdquo; below. Add or remove any.
+            {big
+              ? "Next, I'll show you the jobs that lead there, and you can add or remove any."
+              : <>I&apos;ve put the jobs that lead there under &ldquo;What kinds of jobs?&rdquo; below. Add or remove any.</>}
           </p>
           {stage.plan.carryOver.length > 0 && (
             <>

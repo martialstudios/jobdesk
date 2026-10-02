@@ -191,6 +191,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        // The brand song starts when a resume is read, a moment after the click.
+        config.mediaTypesRequiringUserActionForPlayback = []
         let wv = AppWebView(frame: .zero, configuration: config)
         wv.navigationDelegate = self
         wv.uiDelegate = self

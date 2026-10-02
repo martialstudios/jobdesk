@@ -127,10 +127,10 @@ def main():
     # The version pill + "Report a bug" (a career-ops GitHub link) stays out,
     # and the overlay goes in.
     edit(web, "src/components/app-shell.tsx", "        <BetaBanner />\n",
-         "        <JobdeskFun />\n        <TaskRunner />\n        <UpdateNotice />\n")
+         "        <JobdeskFun />\n        <BrandMusic />\n        <TaskRunner />\n        <UpdateNotice />\n")
     edit(web, "src/components/app-shell.tsx",
          'import { BetaBanner } from "@/components/beta/beta-banner";',
-         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { TaskRunner } from "@/components/jobdesk/tasks";\n'
+         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { BrandMusic } from "@/components/jobdesk/music";\nimport { TaskRunner } from "@/components/jobdesk/tasks";\n'
          'import { UpdateNotice } from "@/components/jobdesk/update-notice";')
     # Apply drafts answers from config/profile.yml, which starts as a copy of
     # career-ops's example person: empty anything still identical to it first.
@@ -392,6 +392,26 @@ def main():
             die(f"BRAND_ART {art!r}: no such picture")
         shutil.copyfile(src, os.path.join(web, "public", "jobdesk-art" + ext))
         art_url = "/jobdesk-art" + ext
+    # A song of their choosing while the resume is read (an audio file they own,
+    # copied into the build like the picture): BRAND_MUSIC_CLIP "start-end" in
+    # seconds picks the part to play; it fades out at the end.
+    music = {"src": "", "start": 0, "end": 0, "title": os.environ.get("BRAND_MUSIC_TITLE", "").strip()}
+    song = os.environ.get("BRAND_MUSIC", "").strip()
+    if song:
+        src = song if os.path.isabs(song) else os.path.join(ROOT, song)
+        ext = os.path.splitext(src)[1].lower()
+        if ext not in (".m4a", ".mp3", ".aac", ".wav"):
+            die(f"BRAND_MUSIC {song!r}: use a .m4a, .mp3, .aac or .wav file")
+        if not os.path.isfile(src):
+            die(f"BRAND_MUSIC {song!r}: no such file")
+        shutil.copyfile(src, os.path.join(web, "public", "jobdesk-music" + ext))
+        music["src"] = "/jobdesk-music" + ext
+        clip = os.environ.get("BRAND_MUSIC_CLIP", "").strip()
+        if clip:
+            m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", clip)
+            if not m or float(m.group(2)) <= float(m.group(1)):
+                die(f"BRAND_MUSIC_CLIP {clip!r}: use start-end in seconds, like 62-128")
+            music["start"], music["end"] = float(m.group(1)), float(m.group(2))
     theme = os.environ.get("BRAND_THEME", "").strip()
     if theme not in ("", "howl"):
         die(f"BRAND_THEME {theme!r}: the only theme is howl (or leave it empty)")
@@ -401,6 +421,8 @@ def main():
         f.write("export const JOBDESK_THEME: string = " + json.dumps(theme) + ";\n")
         f.write("export const JOBDESK_CHEER: string = " + json.dumps(cheer, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_ART: string = " + json.dumps(art_url) + ";\n")
+        f.write("export const JOBDESK_MUSIC: { src: string; start: number; end: number; title: string } = "
+                + json.dumps(music, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_FUN: { lines: [string, number | null][]; reveal: string; "
                 "revealSeconds: number; dots: string[] } = " + json.dumps(fun, ensure_ascii=False) + ";\n")
 
