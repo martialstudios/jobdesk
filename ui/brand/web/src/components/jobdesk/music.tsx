@@ -1,10 +1,11 @@
 "use client";
 
 // JobDesk branded builds: a song of the builder's choosing (BRAND_MUSIC, an
-// audio file they own, copied into the build) plays once when a resume is read
-// (the "start" of the JobdeskFun overlay). It keeps going while she answers the
-// questions and the search runs, then fades out at the end of the clip
-// (BRAND_MUSIC_CLIP picks the part, like the chorus). A small button stops it.
+// audio file they own, copied into the build) plays once when the first job
+// search starts (the "resume" of the JobdeskFun overlay, after the quick
+// questions) and keeps going on whatever page they're on. A file already cut
+// to length plays as it is, its own fades and all; with BRAND_MUSIC_CLIP
+// (a part of a longer song) it fades in and out here. A small button stops it.
 // Renders nothing without one.
 
 import { useEffect, useRef, useState } from "react";
@@ -36,8 +37,9 @@ export function BrandMusic() {
       const end = JOBDESK_MUSIC.end || a.duration || 0;
       const t = a.currentTime;
       if (end && t >= end) return stopAll();
-      const fin = Math.min(1, (t - start) / FADE_IN);
-      const fout = end ? Math.min(1, (end - t) / FADE_OUT) : 1;
+      const clipped = JOBDESK_MUSIC.end > 0;
+      const fin = clipped ? Math.min(1, (t - start) / FADE_IN) : 1;
+      const fout = clipped ? Math.min(1, (end - t) / FADE_OUT) : 1;
       if (fout < 1) fadingOut = true;
       a.volume = Math.max(0, Math.min(1, VOLUME * Math.max(0, Math.min(fin, fout))));
       frame = window.requestAnimationFrame(tick);
@@ -49,7 +51,7 @@ export function BrandMusic() {
       if (!a.paused && !fadingOut) return;
       window.cancelAnimationFrame(frame);
       fadingOut = false;
-      a.volume = 0;
+      a.volume = JOBDESK_MUSIC.end > 0 ? 0 : VOLUME;
       a.currentTime = start;
       a.onended = stopAll;
       a.play()
@@ -60,7 +62,7 @@ export function BrandMusic() {
         .catch(() => setPlaying(false));
     };
     const onEvent = (e: Event) => {
-      if ((e as CustomEvent).detail === "start") play();
+      if ((e as CustomEvent).detail === "resume") play();
     };
     const onStop = () => stopAll();
     window.addEventListener("jobdesk:fun", onEvent);
