@@ -10,7 +10,12 @@
 #   PAYLOAD/jobdesk/            install.sh, bin/jobdesk, VERSION, this script, shims/
 #   PAYLOAD/common.tar.gz       career-ops/ (a release checkout with node_modules), ui/
 #   PAYLOAD/<arm64|x64>.tar.gz  runtime/node-*, tools/bin/claude, browsers/
-#   PAYLOAD/secrets.env         ANTHROPIC_API_KEY=..., optional
+#   PAYLOAD/secrets.env         ANTHROPIC_API_KEY=..., optional (an in-app update has none:
+#                               the installed one is kept)
+#   PAYLOAD/<arch>.fingerprint  what's in <arch>.tar.gz, by version
+#   PAYLOAD/update.env          where in-app updates come from, optional
+# An in-app update (macos/updater.mjs) leaves out <arch>.tar.gz when Node,
+# Claude Code and the PDF browser didn't change: the installed ones stay.
 #
 # bash 3.2 and BSD tools only, like the rest of JobDesk.
 
@@ -151,6 +156,19 @@ setup_shims() {
   fi
 }
 
+# In-app updates: the updater, and where updates come from.
+setup_updates() {
+  if [ -f "$SRC_DIR/macos/updater.mjs" ]; then
+    if ! { cp "$SRC_DIR/macos/updater.mjs" "$JOBDESK_HOME/bin/.jobdesk-update.mjs.new" &&
+           mv -f "$JOBDESK_HOME/bin/.jobdesk-update.mjs.new" "$JOBDESK_HOME/bin/jobdesk-update.mjs"; }; then
+      die "Couldn't set up updates."
+    fi
+  fi
+  if [ -f "$PAYLOAD/update.env" ]; then
+    cp "$PAYLOAD/update.env" "$JOBDESK_HOME/update.env" || die "Couldn't set up updates."
+  fi
+}
+
 setup_secrets() {
   local tmp="$JOBDESK_HOME/.secrets.env.new"
   if [ ! -s "$PAYLOAD/secrets.env" ]; then
@@ -209,16 +227,25 @@ main_dmg() {
   mkdir -p "$WORK_DIR/common" "$WORK_DIR/arch"
   tar -xzf "$PAYLOAD/common.tar.gz" -C "$WORK_DIR/common" >> "$LOG_FILE" 2>&1 ||
     die "Couldn't unpack JobDesk. Drag it into Applications again from JobDesk.dmg."
-  status 35 "Unpacking the parts for this Mac"
-  tar -xzf "$PAYLOAD/$ARCH.tar.gz" -C "$WORK_DIR/arch" >> "$LOG_FILE" 2>&1 ||
-    die "Couldn't unpack JobDesk for this Mac ($ARCH)."
-
-  status 55 "Setting up Node.js"
-  setup_node
-  status 62 "Setting up Claude"
-  setup_claude
-  status 68 "Setting up the PDF maker"
-  setup_browsers
+  # An update without new parts for this Mac keeps the installed ones.
+  if [ -f "$PAYLOAD/$ARCH.tar.gz" ] || [ ! -x "$JOBDESK_HOME/node/bin/node" ]; then
+    status 35 "Unpacking the parts for this Mac"
+    tar -xzf "$PAYLOAD/$ARCH.tar.gz" -C "$WORK_DIR/arch" >> "$LOG_FILE" 2>&1 ||
+      die "Couldn't unpack JobDesk for this Mac ($ARCH)."
+    status 55 "Setting up Node.js"
+    setup_node
+    status 62 "Setting up Claude"
+    setup_claude
+    status 68 "Setting up the PDF maker"
+    setup_browsers
+    if [ -f "$PAYLOAD/$ARCH.fingerprint" ]; then
+      cp "$PAYLOAD/$ARCH.fingerprint" "$JOBDESK_HOME/.dmg-arch"
+    else
+      rm -f "$JOBDESK_HOME/.dmg-arch"
+    fi
+  else
+    log "keeping the installed Node.js, Claude Code and PDF browser"
+  fi
   status 75 "Setting up the web app"
   setup_ui
   status 85 "Setting up your job search folder"
@@ -227,6 +254,7 @@ main_dmg() {
   status 92 "Finishing"
   setup_shims
   install_jobdesk_files > /dev/null
+  setup_updates
   setup_secrets
   APP_PATH="$APP"
   write_config

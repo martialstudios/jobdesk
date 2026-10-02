@@ -380,6 +380,36 @@ it lives only on the owner's Mac.
     the build only; `brands/` is git-ignored apart from the example). A
     hand-drawn witch-on-a-broom SVG was tried and taken out (owner: "looks
     terrible"); the owner may add their own picture there instead.
+  - **In-app updates** (2026-10-02; `macos/updater.mjs`, `tools/publish-update.sh`,
+    `/api/jobdesk/update`, `update-notice.tsx`). Owner: "when I push a new
+    change she can update from her app with an update available notice".
+    - Channel: the private repo `martialstudios/jobdesk-updates` (owner chose
+      private over public releases: a build carries her name). Releases are
+      tagged `<channel>-<build stamp>`; each has `manifest.json`, `payload.tar`
+      (scripts, career-ops, web UI, `brand.env`, `update.env`; never
+      `secrets.env`, and the publisher refuses key-shaped strings) and, only
+      when their versions changed, `arm64`/`x64.tar.gz` (Node, Claude Code,
+      browser; fingerprinted by version since the archive's checksum changes
+      every build; unchanged ones point at the release that has them).
+    - Her side: `BRAND_UPDATE_REPO` / `BRAND_UPDATE_CHANNEL` in the brand file
+      write `update.env`; a read-only fine-grained GitHub token (Keychain item
+      `jobdesk-update-token`, Contents: read on that one repo) goes into
+      `secrets.env` as `JOBDESK_UPDATE_TOKEN` (never exported to the server).
+      The app checks 5 s after opening and every 6 h; "Update now" downloads
+      (SHA-256 checked), runs the same `dmg-setup.sh` a new DMG runs (data,
+      key and settings kept; arch parts kept when unchanged) and restarts the
+      server; the page reloads and says what's new. "Later" waits a day.
+    - Gotchas found in testing: `jobdesk stop` kills the server's whole
+      process tree, so the updater is started through `nohup … &` in a shell
+      that exits (reparented to launchd); config.env values are bash `%q`
+      (`$'…\342\200\231…'` for the curly apostrophe), decoded byte-wise.
+      The launcher's `needs-setup` now treats an install newer than the app's
+      own payload as set up (build ids end in a sortable UTC stamp), so an
+      older app bundle never undoes an update.
+    - Publishing a change: build with the brand, then
+      `tools/publish-update.sh --brand=brands/asal.env --notes="- what's new"`.
+    - Verified end to end on a test channel: notice with notes, 147 MB
+      download, install, server back in ~25 s, "Updated!" with notes.
   - **First application** (`cheer.tsx`, `BRAND_CHEER`): the very first job
     marked sent (none applied before, per My list) gets a confetti
     celebration with the builder's line ("Ryan says, You got this!" for Asal);

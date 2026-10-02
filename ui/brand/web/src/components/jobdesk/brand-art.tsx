@@ -6,6 +6,6 @@ export function BrandArt() {
   if (!JOBDESK_ART) return null;
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={JOBDESK_ART} alt="" aria-hidden="true" className="mt-6 w-full rounded-xl object-cover" style={{ maxHeight: 220 }} />
+    <img src={JOBDESK_ART} alt="" aria-hidden="true" className="mt-6 h-auto w-full rounded-xl object-contain" style={{ maxHeight: 300 }} />
   );
 }
