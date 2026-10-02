@@ -24,11 +24,25 @@ async function post(body: object) {
   return d;
 }
 
-export function DreamCard({ goal, onPlan, big = false }: { goal: DreamGoal | null; onPlan: (plan: DreamPlan | null) => void; big?: boolean }) {
+export function DreamCard({
+  goal,
+  onPlan,
+  big = false,
+  compact = false,
+  onChange,
+}: {
+  goal: DreamGoal | null;
+  onPlan: (plan: DreamPlan | null, dream?: string) => void;
+  big?: boolean;
+  /** After the dream step: just the dream in a line, and a way to change it. */
+  compact?: boolean;
+  onChange?: () => void;
+}) {
   const [dream, setDream] = useState(goal?.dream || "");
   const [stage, setStage] = useState<Stage>(goal ? { kind: "plan", plan: goal.plan } : { kind: "idle" });
   const [picked, setPicked] = useState<Record<number, string[]>>({});
   const [other, setOther] = useState<Record<number, string>>({});
+  const [extra, setExtra] = useState("");
   const [error, setError] = useState("");
 
   const start = async () => {
@@ -48,13 +62,14 @@ export function DreamCard({ goal, onPlan, big = false }: { goal: DreamGoal | nul
   const finish = async (ask: DreamAsk) => {
     const answers = ask.questions
       .map((q, i) => ({ q: q.q, a: [...(picked[i] || []), other[i]?.trim()].filter(Boolean).join("; ") }))
-      .filter((x) => x.a);
+      .filter((x) => x.a)
+      .concat(extra.trim() ? [{ q: "Anything else about the job you want?", a: extra.trim() }] : []);
     setError("");
     setStage({ kind: "thinking", line: "Finding the jobs that lead there…" });
     try {
       const { plan } = (await post({ step: "plan", dream, answers })) as { plan: DreamPlan };
       setStage({ kind: "plan", plan });
-      onPlan(plan);
+      onPlan(plan, dream);
     } catch (e) {
       setError((e as Error).message);
       setStage({ kind: "questions", ask });
@@ -73,6 +88,20 @@ export function DreamCard({ goal, onPlan, big = false }: { goal: DreamGoal | nul
       const next = have.includes(option) ? have.filter((x) => x !== option) : multi ? [...have, option] : [option];
       return { ...p, [i]: next };
     });
+
+  if (compact && stage.kind === "plan") {
+    return (
+      <section className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-brand/30 bg-brand/5 px-5 py-3">
+        <Sparkles className="size-4 text-brand" />
+        <span className="text-foreground">
+          Your dream job: <span className="font-medium">{dream || goal?.dream}</span>
+        </span>
+        <button onClick={() => (onChange ? onChange() : reset())} className="text-sm text-muted underline-offset-2 hover:text-foreground hover:underline">
+          Change
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section className="mt-8 rounded-2xl border border-brand/30 bg-brand/5 p-5">
@@ -122,9 +151,15 @@ export function DreamCard({ goal, onPlan, big = false }: { goal: DreamGoal | nul
                 })}
               </div>
               <input value={other[i] || ""} onChange={(e) => setOther({ ...other, [i]: e.target.value })}
-                placeholder="Or say it your way" className={`${box} mt-2 text-sm`} />
+                placeholder="Or type your own answer" aria-label={`Your own answer: ${q.q}`} className={`${box} mt-2 text-sm`} />
             </div>
           ))}
+          <div className="mt-6">
+            <p className="font-medium text-foreground">Anything else about the job you want?</p>
+            <p className="text-xs text-faint">In your own words: the kind of place, the people, what a great day looks like. Optional.</p>
+            <textarea value={extra} onChange={(e) => setExtra(e.target.value)} rows={2}
+              placeholder="Like: somewhere small and creative, where I get to read a lot" className={`${box} mt-2 resize-none text-sm`} />
+          </div>
           <div className="mt-5 flex items-center gap-4">
             <button onClick={() => void finish(stage.ask)}
               className="inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground hover:bg-brand-200">

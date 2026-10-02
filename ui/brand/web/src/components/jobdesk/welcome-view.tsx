@@ -90,8 +90,10 @@ export function WelcomeView() {
       .finally(() => setLoaded(true));
   }, []);
 
-  const applyPlan = (next: DreamPlan | null) => {
+  const applyPlan = (next: DreamPlan | null, dream?: string) => {
     setPlan(next);
+    // Kept so the dream shows (and stays) when moving between the two steps.
+    setGoal(next ? { dream: dream || goal?.dream || "", answers: goal?.answers || [], plan: next, at: new Date().toISOString() } : null);
     if (next) setRoles(Array.from(new Set([...next.roles, ...next.dream])));
     else if (resumeRoles.length) setRoles(resumeRoles);
   };
@@ -192,7 +194,12 @@ export function WelcomeView() {
         {first ? "I filled these in from your resume. Fix anything that's off, then I'll find your jobs." : "Change anything, and I'll search again."}
       </p>
 
-      {loaded && <DreamCard goal={goal} onPlan={applyPlan} />}
+      {loaded &&
+        (plan ? (
+          <DreamCard goal={goal} onPlan={applyPlan} compact onChange={() => setStep("dream")} />
+        ) : (
+          <DreamCard goal={goal} onPlan={applyPlan} />
+        ))}
 
       <section className="mt-8">
         <h2 className="font-medium text-foreground">What kinds of jobs?</h2>
