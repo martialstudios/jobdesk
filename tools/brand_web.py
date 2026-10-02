@@ -119,6 +119,11 @@ def main():
     edit(web, "src/components/explore/explore-provider.tsx",
          '      window.history.replaceState(null, "", `/explore${qs ? `?${qs}` : ""}`);\n',
          '      if (window.location.pathname.startsWith("/explore")) window.history.replaceState(null, "", `/explore${qs ? `?${qs}` : ""}`);\n')
+    # Apply's "no Chrome" error speaks to developers (npx playwright …): say
+    # it the way the person using the app can act on.
+    edit(web, "src/lib/apply/session.ts",
+         'throw new Error("The apply feature needs Google Chrome. Install Chrome (or run: npx playwright install chromium) and try again.");',
+         'throw new Error("Apply fills in forms using Google Chrome, which isn\'t on this Mac yet. Download it free from google.com/chrome, install it, then press Apply again.");')
     # The optional theme's drawings (components/howl): they render nothing
     # unless the brand file sets BRAND_THEME.
     edit(web, "src/components/app-shell.tsx", '      <div className="flex min-h-screen">\n',
@@ -337,6 +342,7 @@ def main():
     if not isinstance(dots, list) or not all(isinstance(d, str) for d in dots):
         die("BRAND_FUN_DOTS must be a JSON list of lines")
     fun = {"lines": [[t, s] for t, s in lines], "reveal": reveal, "revealSeconds": reveal_secs, "dots": dots}
+    cheer = os.environ.get("BRAND_CHEER", "").strip()
     theme = os.environ.get("BRAND_THEME", "").strip()
     if theme not in ("", "howl"):
         die(f"BRAND_THEME {theme!r}: the only theme is howl (or leave it empty)")
@@ -344,6 +350,7 @@ def main():
         f.write("// Written by JobDesk's tools/brand_web.py from the brand file.\n")
         f.write("export const JOBDESK_BRAND_NAME = " + json.dumps(name, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_THEME: string = " + json.dumps(theme) + ";\n")
+        f.write("export const JOBDESK_CHEER: string = " + json.dumps(cheer, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_FUN: { lines: [string, number | null][]; reveal: string; "
                 "revealSeconds: number; dots: string[] } = " + json.dumps(fun, ensure_ascii=False) + ";\n")
 

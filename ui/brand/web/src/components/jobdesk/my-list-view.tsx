@@ -17,6 +17,7 @@ import { useList, type ListItem } from "./use-list";
 import { queueTasks, useTasks, clearFailed } from "./tasks";
 import { tierOf } from "./match";
 import { canAutofill } from "./apply-kind";
+import { CheerToast } from "./cheer";
 
 const APPLY_KEY = "jobdesk:applying";
 
@@ -45,6 +46,13 @@ export function MyListView() {
   const { items, loaded, setStatus, remove } = useList(8000);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState<string[]>([]);
+  const [sentAt, setSentAt] = useState(0);
+  const [firstSent, setFirstSent] = useState(false);
+  // The very first application ever (the list remembers): the celebration.
+  const markSent = () => {
+    setFirstSent(!items.some((i) => i.status === "applied"));
+    setSentAt(Date.now());
+  };
 
   useEffect(() => setApplying(readApplying()), []);
 
@@ -74,6 +82,7 @@ export function MyListView() {
   };
   const next = async (submitted: boolean) => {
     if (current && submitted) {
+      markSent();
       await setStatus(current.url, "applied");
       if (current.n) {
         void fetch("/api/status", {
@@ -99,6 +108,7 @@ export function MyListView() {
   if (current) {
     return (
       <div className="mx-auto max-w-2xl px-5 pb-24 pt-12 md:px-8">
+        <CheerToast at={sentAt} first={firstSent} />
         <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">
           Applying · {applying.length} left
         </p>
@@ -177,6 +187,7 @@ export function MyListView() {
 
   return (
     <div className="mx-auto max-w-4xl px-5 pb-24 pt-10 md:px-8">
+      <CheerToast at={sentAt} first={firstSent} />
       <h1 className={`${instrumentSerif.className} text-4xl text-landing md:text-5xl`}>My list</h1>
       {loaded && items.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-border p-6 text-foreground">
@@ -282,7 +293,7 @@ export function MyListView() {
                       </button>
                     )}
                     {!applied && (
-                      <button onClick={() => void setStatus(i.url, "applied")} title="I applied to this (on their site)" className="rounded-md p-1.5 text-faint hover:text-emerald-600">
+                      <button onClick={() => { markSent(); void setStatus(i.url, "applied"); }} title="I applied to this (on their site)" className="rounded-md p-1.5 text-faint hover:text-emerald-600">
                         <Check className="size-4" />
                       </button>
                     )}
