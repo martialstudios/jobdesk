@@ -102,10 +102,11 @@ def main():
     # The version pill + "Report a bug" (a career-ops GitHub link) stays out,
     # and the overlay goes in.
     edit(web, "src/components/app-shell.tsx", "        <BetaBanner />\n",
-         "        <JobdeskFun />\n        <TaskRunner />\n")
+         "        <JobdeskFun />\n        <TaskRunner />\n        <UpdateNotice />\n")
     edit(web, "src/components/app-shell.tsx",
          'import { BetaBanner } from "@/components/beta/beta-banner";',
-         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { TaskRunner } from "@/components/jobdesk/tasks";')
+         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { TaskRunner } from "@/components/jobdesk/tasks";\n'
+         'import { UpdateNotice } from "@/components/jobdesk/update-notice";')
     # Apply drafts answers from config/profile.yml, which starts as a copy of
     # career-ops's example person: empty anything still identical to it first.
     edit(web, "src/app/api/apply/prefill/route.ts",

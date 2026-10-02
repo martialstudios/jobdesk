@@ -585,6 +585,11 @@ cmd_login() {
 cmd_update() {
   local dir url rc tmp_root
   if [ "$JOBDESK_EDITION" = dmg ]; then
+    if [ -f "$JOBDESK_HOME/update.env" ] && [ -f "$JOBDESK_HOME/bin/jobdesk-update.mjs" ]; then
+      say "Updating (the app shows the same from its \"Update available\" notice)..."
+      "$JOBDESK_HOME/node/bin/node" "$JOBDESK_HOME/bin/jobdesk-update.mjs" apply || die "The update didn't install."
+      return 0
+    fi
     say "This JobDesk came from JobDesk.dmg. To update it, open a newer JobDesk.dmg"
     say "and drag JobDesk into Applications again. Your CV and tracker are kept."
     return 0
@@ -624,7 +629,7 @@ is_jobdesk_app() {
   [ "$(plutil -extract CFBundleIdentifier raw "$1/Contents/Info.plist" 2>/dev/null)" = com.martialstudios.jobdesk ]
 }
 
-OWNED_ENTRIES="bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock .DS_Store browsers shims claude secrets.env .secrets.env.new .dmg-build"
+OWNED_ENTRIES="bin node runtime ui tools logs run VERSION config.env .config.env.new .install-lock .DS_Store browsers shims claude secrets.env .secrets.env.new .dmg-build .dmg-arch update.env .update"
 
 # Removes only what JobDesk put in its folder, never the folder wholesale:
 # whatever else lives there (by mistake or not) stays.
@@ -733,7 +738,9 @@ main() {
     status) [ "${1:-}" = "--quiet" ] && QUIET=1; cmd_status ;;
     # For JobDesk.app's periodic check: is the server process there? No HTTP,
     # so a busy server is never mistaken for a stopped one.
-    alive) running_pid >/dev/null ;;
+    # The app's "still running?" check: an in-app update stops the server
+    # for a minute; the app stays open meanwhile.
+    alive) running_pid >/dev/null || [ -f "$RUN_DIR/updating" ] || installing ;;
     login) cmd_login ;;
     update|repair) cmd_update "$@" ;;
     doctor) cmd_doctor ;;

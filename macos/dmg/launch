@@ -46,8 +46,13 @@ case "${1:-}" in
     esac
     ;;
   needs-setup)
-    if [ -x "$J" ] && [ -f "$PAYLOAD/build-id" ] &&
-       [ "$(cat "$JOBDESK_HOME/.dmg-build" 2>/dev/null)" = "$(cat "$PAYLOAD/build-id")" ]; then
+    # Set up from this build, or from a newer one (an in-app update): no.
+    # Build ids end in a UTC time stamp (…T104626Z), so they sort in order;
+    # an app whose own payload is older never undoes an update.
+    installed=$(cat "$JOBDESK_HOME/.dmg-build" 2>/dev/null)
+    mine=$(cat "$PAYLOAD/build-id" 2>/dev/null)
+    if [ -x "$J" ] && [ -n "$mine" ] && [ -n "$installed" ] &&
+       { [ "$installed" = "$mine" ] || [ ! "${installed##* }" \< "${mine##* }" ]; }; then
       printf 'no'
     else
       printf 'yes'

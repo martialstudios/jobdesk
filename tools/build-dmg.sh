@@ -38,6 +38,10 @@ set -o pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT="$ROOT/dist"
 KEY_SERVICE=jobdesk-anthropic-api-key
+# In-app updates (BRAND_UPDATE_REPO / BRAND_UPDATE_CHANNEL in the brand file):
+# a read-only GitHub token for that private repository, from the Keychain.
+UPDATE_TOKEN_SERVICE=jobdesk-update-token
+UPDATE_TOKEN_FILE=""
 KEY_FILE=""
 WORKSPACE_ID=""
 NO_KEY=0
@@ -61,6 +65,8 @@ for arg in "$@"; do
     --test-home=*) TEST_HOME="${arg#--test-home=}" ;;
     --brand=*) BRAND_FILE="${arg#--brand=}" ;;
     --model=*) MODEL="${arg#--model=}" ;;
+    --update-token-service=*) UPDATE_TOKEN_SERVICE="${arg#--update-token-service=}" ;;
+    --update-token-file=*) UPDATE_TOKEN_FILE="${arg#--update-token-file=}" ;;
     -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$arg" >&2; exit 2 ;;
   esac
@@ -122,6 +128,21 @@ elif [ "$NO_KEY" = 0 ]; then
     sk-ant-*) ;;
     *) die "The Keychain item '$KEY_SERVICE' doesn't look like an Anthropic API key (sk-ant-...)." ;;
   esac
+fi
+
+# In-app updates: the channel from the brand file, the token from the Keychain.
+UPDATE_REPO="${BRAND_UPDATE_REPO:-}"
+UPDATE_CHANNEL="${BRAND_UPDATE_CHANNEL:-}"
+UPDATE_TOKEN=""
+if [ -n "$UPDATE_REPO$UPDATE_CHANNEL" ]; then
+  case "$UPDATE_REPO" in */*) ;; *) die "BRAND_UPDATE_REPO should look like owner/repo." ;; esac
+  case "$UPDATE_CHANNEL" in ''|*[!a-z0-9-]*) die "BRAND_UPDATE_CHANNEL should be lowercase letters, digits and dashes." ;; esac
+  if [ -n "$UPDATE_TOKEN_FILE" ]; then
+    UPDATE_TOKEN=$(head -n 1 "$UPDATE_TOKEN_FILE" 2>/dev/null | tr -d ' \r\n') || UPDATE_TOKEN=""
+  else
+    UPDATE_TOKEN=$(security find-generic-password -s "$UPDATE_TOKEN_SERVICE" -w 2>/dev/null) || UPDATE_TOKEN=""
+  fi
+  [ -n "$UPDATE_TOKEN" ] || die "Updates are on for this brand but there's no token in the Keychain under '$UPDATE_TOKEN_SERVICE' (a GitHub token that can only read $UPDATE_REPO)."
 fi
 
 VERSION=$(tr -d ' \n' < "$ROOT/VERSION")
@@ -232,11 +253,15 @@ say "Packing"
 run tar -czf "$PAY/common.tar.gz" -C "$WORK/common" career-ops ui
 for a in $ARCHES; do
   run tar -czf "$PAY/$a.tar.gz" -C "$WORK/arch-$a" runtime tools browsers
+  # What's in it, by version: an in-app update downloads these parts only
+  # when this changes (the archive's own checksum changes on every build).
+  printf '%s node-%s claude-%s %s\n' "$a" "$NODE_VERSION" "$CLAUDE_VERSION" \
+    "$(find "$WORK/arch-$a/browsers" -maxdepth 1 -name 'chromium_headless_shell-*' -exec basename {} \; | sort | head -n 1)" > "$PAY/$a.fingerprint"
 done
 mkdir -p "$PAY/jobdesk/bin" "$PAY/jobdesk/macos" "$PAY/jobdesk/shims"
 cp "$ROOT/install.sh" "$ROOT/VERSION" "$PAY/jobdesk/"
 cp "$ROOT/bin/jobdesk" "$PAY/jobdesk/bin/"
-cp "$ROOT/macos/dmg-setup.sh" "$PAY/jobdesk/macos/"
+cp "$ROOT/macos/dmg-setup.sh" "$ROOT/macos/updater.mjs" "$PAY/jobdesk/macos/"
 cp "$ROOT/macos/shims/git" "$PAY/jobdesk/shims/"
 chmod 755 "$PAY/jobdesk/bin/jobdesk" "$PAY/jobdesk/shims/git"
 BUILD_ID="$VERSION career-ops-$CO_VERSION node-$NODE_VERSION claude-$CLAUDE_VERSION $(date -u +%Y%m%dT%H%M%SZ)"
@@ -254,6 +279,11 @@ if [ -n "$KEY" ]; then
   )
 fi
 KEY=""
+if [ -n "$UPDATE_TOKEN" ]; then
+  ( umask 077 && printf 'JOBDESK_UPDATE_TOKEN=%q\n' "$UPDATE_TOKEN" >> "$PAY/secrets.env" )
+  printf 'UPDATE_REPO=%q\nUPDATE_CHANNEL=%q\n' "$UPDATE_REPO" "$UPDATE_CHANNEL" > "$PAY/update.env"
+fi
+UPDATE_TOKEN=""
 if [ -n "$BRAND_FILE" ]; then
   # For first-run setup: the name of their folder in the home folder.
   printf 'BRAND_DATA_DIR=%q\n' "${BRAND_DATA_DIR:-}" > "$PAY/brand.env"
