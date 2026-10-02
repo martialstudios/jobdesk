@@ -21,6 +21,7 @@ import { howlOn } from "@/components/howl/decor";
 import { HowlSearchScene } from "@/components/howl/scene";
 
 import { canAutofill } from "./apply-kind";
+import { BrandLogo, prettyCompany } from "./brand-logo";
 
 // The job boards whose forms Apply can fill in (see apply-kind.ts).
 const EASY_APPLY = new Set(["greenhouse", "lever", "ashby"]);
@@ -269,6 +270,16 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
     [scanning, shown, extra],
   );
   const reads = useSynopses(toRead);
+  // The company as they write it: from the quick read once it has read the
+  // posting, else the job board's slug tidied up.
+  const nameOf = (o: DiscoveredOffer) => {
+    const r = reads[o.url];
+    return prettyCompany((r && r !== "loading" && r.companyName) || o.company);
+  };
+  const siteOf = (o: DiscoveredOffer) => {
+    const r = reads[o.url];
+    return (r && r !== "loading" && r.website) || undefined;
+  };
 
   const toggle = (url: string) =>
     setPicked((p) => {
@@ -283,7 +294,8 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
 
   const addPicked = async (score: boolean) => {
     if (!pickedOffers.length) return;
-    const next = await add(pickedOffers);
+    // My list keeps the company's real name.
+    const next = await add(pickedOffers.map((o) => ({ ...o, company: nameOf(o) })));
     if (next && score) queueTasks(pickedOffers.map((o) => ({ url: o.url, company: o.company, title: o.title })), false);
     setNotice(
       `Added ${pickedOffers.length} job${pickedOffers.length === 1 ? "" : "s"} to your list${score ? `, and scoring ${pickedOffers.length === 1 ? "it" : "them"} now` : ""}.`,
@@ -416,7 +428,10 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
               </label>
             </div>
           </div>
-          {abroad > 0 && <p className="mt-2 text-xs text-faint">Left out {abroad} outside the US.</p>}
+          <p className="mt-2 text-xs text-faint">
+            {ex.companiesScanned > 0 && ex.phase !== "idle" && `Checked ${ex.companiesScanned.toLocaleString()} companies' job boards this time${ex.companiesAvailable > ex.companiesScanned ? ` (of ${ex.companiesAvailable.toLocaleString()}; Search again checks a different batch)` : ""}. `}
+            {abroad > 0 && `Left out ${abroad} outside the US.`}
+          </p>
           {sorted.length > 0 && local.length === 0 && !showFar && (
             <p className="mt-4 rounded-xl bg-surface p-4 text-sm text-foreground">
               None of these are within {area.miles} miles{area.remote ? " or remote" : ""}. Try a wider distance, or press{" "}
@@ -442,6 +457,7 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
                     disabled={saved}
                     onChange={() => toggle(o.url)}
                   />
+                  <BrandLogo name={nameOf(o)} domain={siteOf(o)} size={40} />
                   <div className="min-w-0 flex-1">
                     <button type="button" className="w-full text-left" onClick={() => !saved && toggle(o.url)}>
                       <div className="flex flex-wrap items-center gap-2">
@@ -466,13 +482,16 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
                           </span>
                         )}
                       </div>
-                      <div className="mt-0.5 truncate text-sm text-muted">
-                        {[o.company, o.location, placed(o)?.miles != null ? `${placed(o)!.miles} mi away` : "", ago(o.postedAt)].filter(Boolean).join(" · ")}
+                      <div className="mt-0.5 truncate text-sm">
+                        <span className="font-semibold text-foreground">{nameOf(o)}</span>
+                        <span className="text-muted">
+                          {[o.location, placed(o)?.miles != null ? `${placed(o)!.miles} mi away` : "", ago(o.postedAt)].filter(Boolean).map((x) => ` · ${x}`).join("")}
+                        </span>
                       </div>
                     </button>
                     <QuickRead
                       s={reads[o.url]}
-                      company={o.company}
+                      company={nameOf(o)}
                       onRead={() => setExtra((x) => new Set(x).add(o.url))}
                       open={opened.has(o.url)}
                       onToggle={() =>

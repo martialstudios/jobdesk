@@ -14,6 +14,7 @@ import { useApply } from "@/components/apply/apply-provider";
 import { tierOf } from "./match";
 import { Doc } from "./doc";
 import { canAutofill } from "./apply-kind";
+import { BrandLogo, prettyCompany } from "./brand-logo";
 
 type Job = {
   n: string;
@@ -83,7 +84,10 @@ export function JobView({ n }: { n: string }) {
         <ArrowLeft className="size-4" /> My list
       </Link>
       <h1 className={`${instrumentSerif.className} mt-4 text-4xl leading-tight text-landing md:text-5xl`}>{job.role}</h1>
-      <p className="mt-1 text-muted">{job.company}</p>
+      <p className="mt-2 flex items-center gap-2.5 text-lg">
+        <BrandLogo name={prettyCompany(job.company)} size={30} />
+        <span className="font-semibold text-foreground">{prettyCompany(job.company)}</span>
+      </p>
 
       {tier && (
         <div className="mt-6 rounded-2xl border border-border p-5">

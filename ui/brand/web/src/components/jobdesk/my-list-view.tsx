@@ -18,6 +18,7 @@ import { queueTasks, useTasks, clearFailed } from "./tasks";
 import { tierOf } from "./match";
 import { canAutofill } from "./apply-kind";
 import { CheerToast } from "./cheer";
+import { BrandLogo, prettyCompany } from "./brand-logo";
 
 const APPLY_KEY = "jobdesk:applying";
 
@@ -268,7 +269,11 @@ export function MyListView() {
                         </span>
                       )}
                     </div>
-                    <div className="mt-0.5 truncate text-sm text-muted">{[i.company, i.location].filter(Boolean).join(" · ")}</div>
+                    <div className="mt-0.5 flex items-center gap-2 truncate text-sm">
+                      <BrandLogo name={prettyCompany(i.company)} size={22} />
+                      <span className="font-semibold text-foreground">{prettyCompany(i.company)}</span>
+                      {i.location && <span className="truncate text-muted">· {i.location}</span>}
+                    </div>
                     {st?.failed && (
                       <div className="mt-1 text-sm text-muted">
                         {st.failed}{" "}

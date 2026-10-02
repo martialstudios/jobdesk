@@ -88,9 +88,34 @@ def main():
          'title: "career-ops — official web experience",', f'title: "{name}",')
     edit(web, "src/app/layout.tsx",
          'description: "The official, local-first web experience for career-ops.",', f'description: "{name}",')
+    # The assistant's own name (BRAND_ASSISTANT), in its panel and how it
+    # introduces itself; otherwise "the <app> assistant".
+    assistant = os.environ.get("BRAND_ASSISTANT", "").strip()
+    if re.search(r"[\"'`\\$<>{}]", assistant):
+        die("BRAND_ASSISTANT can't contain \" ' ` \\ $ < > { } (use a curly ’ for apostrophes)")
+    who = f"{assistant}, the assistant in {name}" if assistant else f"the {name} assistant"
+    # Its first words in the panel (BRAND_ASSISTANT_HELLO), then what it can do
+    # in plain words ("pipeline" and "onboarding" mean nothing to most people).
+    hello = os.environ.get("BRAND_ASSISTANT_HELLO", "").strip() or f"Hi — I'm your {name} assistant."
+    if re.search(r"[\"`\\$<>{}]", hello):
+        die("BRAND_ASSISTANT_HELLO can't contain \" ` \\ $ < > { }")
+    edit(web, "src/components/assistant-console.tsx",
+         "  \"Hi — I'm your career-ops assistant. I can walk you through onboarding, answer questions about "
+         "your pipeline, or take you where you need to go. What would you like to do?\";",
+         "  " + json.dumps(hello + " I can help you find jobs, fix up your resume, apply, or follow up. "
+                           "What would you like to do?", ensure_ascii=False) + ";")
+    if assistant:
+        edit(web, "src/components/assistant-console.tsx",
+             '<div className="text-sm font-semibold tracking-tight">Assistant</div>',
+             f'<div className="text-sm font-semibold tracking-tight">{assistant}</div>')
+    # No "via claude" under its name: which AI runs it is plumbing. Only say
+    # something there when it isn't set up.
+    edit(web, "src/components/assistant-console.tsx",
+         '<div className="text-xs text-faint">{cliId ? `via ${cliId}` : "no CLI configured"}</div>',
+         '{!cliId && <div className="text-xs text-faint">Not set up yet</div>}')
     edit(web, "src/app/api/assistant/route.ts",
          "You are the career-ops assistant —",
-         f"You are the {name} assistant (always call this app “{name}”, never by the name of the "
+         f"You are {who} (when asked your name, it's “{assistant or name + ' assistant'}”; always call this app “{name}”, never by the name of the "
          "open-source project it's built on; talk like a friendly person, never mention files, YAML, "
          "Markdown, modes or commands, and call the CV \"your resume\") —")
     # The sidebar and mobile header: the long name at a size that fits.
@@ -312,6 +337,15 @@ def main():
         die("src/components/home/first-run-home.tsx: the intro paragraph wasn't found")
     with open(home, "w", encoding="utf-8") as f:
         f.write(s2)
+
+    # Developer taglines ("// local-first · your machine", "local-first · v0")
+    # mean nothing to the person using it.
+    edit(web, "src/components/home/first-run-home.tsx",
+         '          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted">\n'
+         '            <span className="text-faint">//</span> local-first · your machine\n'
+         '          </p>\n', "")
+    for rel in ("src/components/app-shell.tsx", "src/components/mobile-nav.tsx"):
+        edit(web, rel, "text-sm text-faint`}>local-first · v0</span>", "text-sm text-faint`}></span>")
 
     # JobDesk's start page shows its title for a moment while it redirects.
     edit(web, "public/jobdesk-start.html", "<title>JobDesk</title>", f"<title>{name}</title>")
