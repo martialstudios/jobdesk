@@ -137,10 +137,10 @@ def main():
     # The version pill + "Report a bug" (a career-ops GitHub link) stays out,
     # and the overlay goes in.
     edit(web, "src/components/app-shell.tsx", "        <BetaBanner />\n",
-         "        <JobdeskFun />\n        <BrandMusic />\n        <BrandPeek />\n        <TaskRunner />\n        <UpdateNotice />\n")
+         "        <JobdeskFun />\n        <BrandMusic />\n        <TaskRunner />\n        <UpdateNotice />\n")
     edit(web, "src/components/app-shell.tsx",
          'import { BetaBanner } from "@/components/beta/beta-banner";',
-         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { BrandMusic } from "@/components/jobdesk/music";\nimport { BrandPeek } from "@/components/jobdesk/peek";\nimport { TaskRunner } from "@/components/jobdesk/tasks";\n'
+         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { BrandMusic } from "@/components/jobdesk/music";\nimport { TaskRunner } from "@/components/jobdesk/tasks";\n'
          'import { UpdateNotice } from "@/components/jobdesk/update-notice";')
     # Apply drafts answers from config/profile.yml, which starts as a copy of
     # career-ops's example person: empty anything still identical to it first.
@@ -422,19 +422,6 @@ def main():
             if not m or float(m.group(2)) <= float(m.group(1)):
                 die(f"BRAND_MUSIC_CLIP {clip!r}: use start-end in seconds, like 62-128")
             music["start"], music["end"] = float(m.group(1)), float(m.group(2))
-    # A transparent head that peeks up from the bottom of the resume loading
-    # screen (BRAND_PEEK), copied in like the picture above.
-    peek_url = ""
-    peek = os.environ.get("BRAND_PEEK", "").strip()
-    if peek:
-        src = peek if os.path.isabs(peek) else os.path.join(ROOT, peek)
-        ext = os.path.splitext(src)[1].lower()
-        if ext not in (".png", ".webp", ".gif"):
-            die(f"BRAND_PEEK {peek!r}: use a .png, .webp or .gif picture with a transparent background")
-        if not os.path.isfile(src):
-            die(f"BRAND_PEEK {peek!r}: no such picture")
-        shutil.copyfile(src, os.path.join(web, "public", "jobdesk-peek" + ext))
-        peek_url = "/jobdesk-peek" + ext
     theme = os.environ.get("BRAND_THEME", "").strip()
     if theme not in ("", "howl"):
         die(f"BRAND_THEME {theme!r}: the only theme is howl (or leave it empty)")
@@ -444,7 +431,6 @@ def main():
         f.write("export const JOBDESK_THEME: string = " + json.dumps(theme) + ";\n")
         f.write("export const JOBDESK_CHEER: string = " + json.dumps(cheer, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_ART: string = " + json.dumps(art_url) + ";\n")
-        f.write("export const JOBDESK_PEEK: string = " + json.dumps(peek_url) + ";\n")
         f.write("export const JOBDESK_MUSIC: { src: string; start: number; end: number; title: string } = "
                 + json.dumps(music, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_FUN: { lines: [string, number | null][]; reveal: string; "
