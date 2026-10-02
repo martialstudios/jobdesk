@@ -158,6 +158,7 @@ def main():
   { href: "/config", label: "Config", icon: Settings },
 ''', '''  { href: "/find", label: "Find jobs", icon: Compass },
   { href: "/my-list", label: "My list", icon: ListChecks },
+  { href: "/follow-ups", label: "Follow-ups", icon: Send },
   { href: "/resume", label: "My resume", icon: FileText },
   { href: "/advanced", label: "Advanced", icon: Settings },
 ''')

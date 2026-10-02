@@ -336,6 +336,38 @@ it lives only on the owner's Mac.
       Greenhouse, Lever and Ashby forms; it refuses Workday ("multi-step,
       account-gated"). Those jobs say so, and My list / the job page give the
       resume PDF plus a link to apply on their site instead of a failing Apply.
+  - **Where** (2026-10-02, `lib/jobdesk/where.ts`, `/api/jobdesk/where`,
+    `public/jobdesk-us-places.tsv`). Owner: "set to Huntington Beach … getting
+    roles in Toronto and Jakarta; we need a mile radius … and limit to the US".
+    Job locations are split into places and matched against the US Census
+    2023 Gazetteer (public domain, downloaded with the owner's OK; 32,052
+    places, ~1 MB, trimmed by a one-off script: state, name, lat, lon). Each
+    gets us (true/false/unclear), remote, and miles from home (haversine).
+    Find jobs shows only US jobs: within the chosen miles (10/25/50/100, or
+    anywhere in the US; set on the questions page, changeable on Find jobs),
+    plus US-remote ones when open to remote; farther US jobs sit behind "Show N
+    more elsewhere in the US"; abroad is never shown (counted). A stated state
+    keeps a same-name town elsewhere out (Northridge, CA is not Northridge, OH).
+  - **Follow-ups** (main menu, `/follow-ups`, `follow-ups-view.tsx`). Every
+    applied job on My list, grouped: time to follow up (a week after applying
+    or the last nudge), waiting, heard back, gone quiet (two follow-ups, no
+    reply), didn't work out. "Write a follow-up email" drafts one from the job,
+    resume and name (`/api/jobdesk/followup-email`, Haiku, nothing is sent:
+    copy or open in Mail), "I followed up", "remind me in 3 days", outcome
+    (interview / offer / didn't get it, written to career-ops's tracker for a
+    scored job) and notes. My list's ✓ marks a job applied on their site.
+    career-ops's own Follow-ups (tracker-based) stays under Advanced.
+  - **Start fresh / Replace my resume** (My resume). Start fresh
+    (`lib/jobdesk/reset.ts`) moves the resume, profile, answers, My list,
+    follow-ups, reports, tailored PDFs and summaries into
+    `.jobdesk-backup/<time>/` in the data folder (never deleted), restores the
+    starter `_profile.md`, clears the browser's jobdesk keys, and goes back to
+    the start. The DMG carries none of the builder's data (checked: only
+    career-ops test fixtures); an install on a Mac that had JobDesk before
+    reuses that Mac's data folder, which is what Start fresh is for. Summaries
+    older than the resume are read again (their fit line is about it). Only
+    the top 24 jobs are summarized automatically; the rest on "Quick read"
+    (the owner's install had summarized 1,036 jobs).
   - **No example person in applications** (`lib/jobdesk/scrub.ts`). The
     owner's own install had 22 values still copied from career-ops's example
     profile (janesmith LinkedIn, a visa answer, $150K-200K, a fake headline)

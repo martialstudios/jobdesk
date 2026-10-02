@@ -34,16 +34,46 @@ const text = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s
 const texts = (v: unknown, max: number, count: number) =>
   Array.isArray(v) ? Array.from(new Set(v.map((x) => text(x, max)).filter(Boolean))).slice(0, count) : [];
 
+function escapeInStrings(json: string): string {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i];
+    if (inString) {
+      if (c === "\\") {
+        out += c + (json[i + 1] ?? "");
+        i++;
+        continue;
+      }
+      if (c === '"') inString = false;
+      else if (c === "\n") {
+        out += "\\n";
+        continue;
+      } else if (c < " ") {
+        out += " ";
+        continue;
+      }
+    } else if (c === '"') inString = true;
+    out += c;
+  }
+  return out;
+}
+
 /** The JSON between <<<JSON and JSON>>> (or the first {...} as a fallback). */
 export function extractJson(out: string): unknown {
   const fenced = /<<<JSON\s*([\s\S]*?)\s*JSON>>>/.exec(out)?.[1];
   const raw = fenced ?? out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1);
+  const body = raw.replace(/^```(?:json)?\s*|\s*```$/g, "");
   try {
-    // A raw line break inside a string (models do this) is invalid JSON;
-    // as a space it reads the same.
-    return JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[\u0000-\u001f]+/g, " "));
+    return JSON.parse(body);
   } catch {
-    return null;
+    // A raw line break inside a string (models do this) is invalid JSON:
+    // escape control characters inside strings only, so paragraphs survive.
+    try {
+      return JSON.parse(escapeInStrings(body));
+    } catch {
+      return null;
+    }
   }
 }
 
