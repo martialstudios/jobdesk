@@ -310,6 +310,40 @@ it lives only on the owner's Mac.
       samples a different random slice. Measured: about 30–45 s, 4–12
       matching jobs a run for entry-level UX/content titles. With a dream plan,
       senior titles (`word:Senior`, `word:Lead`, …) are excluded.
+    - **Only on request** (2026-10-02). Opening Find jobs used to search by
+      itself whenever nothing was in memory (an app restart), with the
+      profile's defaults, Workday included: owner: "keeps getting
+      automatically triggered". Now only "Find my jobs" on the questions page
+      (`?run=1`) or a button here searches; the last search and results are
+      kept in localStorage (`jobdesk:search`, `jobdesk:results`). Before the
+      questions are answered (`.career-ops-web/jobdesk-answered`, written by
+      personalize) Find jobs asks for them instead.
+    - Search filters drop the starter portals.yml's entry-level blocks
+      (Junior, Intern…, written for career-ops's example senior engineer) and,
+      by default ("Skip senior, lead and director jobs"), add senior ones.
+      career-ops's search moves the address to /explore; the brand layer keeps
+      Find jobs' own.
+    - **Quick read per job** (`lib/jobdesk/synopsis.ts`,
+      `/api/jobdesk/synopsis`, `use-synopses.ts`): the posting's real text via
+      career-ops's `fetch-jd.mjs` (Greenhouse/Lever/Ashby/Workday APIs, <1 s),
+      then Haiku 4.5 (`claude -p --model claude-haiku-4-5`, thinking off:
+      20 s → 8 s a batch) writes a one-line summary, what you'd do, what they
+      want, level/type/place/pay, and a fit line from the resume and goal.
+      Batches of 3, 4 at a time, only after the search ends; cached per job in
+      `.career-ops-web/jobdesk-synopsis/`. Measured: 5 jobs in 5 s, 10 in 19 s.
+      A posting that can't be read gets no summary, never a guess.
+    - **Easy apply / Apply on their site** (`apply-kind.ts`): career-ops fills
+      Greenhouse, Lever and Ashby forms; it refuses Workday ("multi-step,
+      account-gated"). Those jobs say so, and My list / the job page give the
+      resume PDF plus a link to apply on their site instead of a failing Apply.
+  - **No example person in applications** (`lib/jobdesk/scrub.ts`). The
+    owner's own install had 22 values still copied from career-ops's example
+    profile (janesmith LinkedIn, a visa answer, $150K-200K, a fake headline)
+    because the questions, and so personalization, were skipped; Apply drafts
+    answers from that file. Any personal value identical to the example is
+    emptied before personalize runs, after it finishes, and before Apply's
+    prefill (a brand edit). Verified on a localhost mock form: name, email,
+    phone, "why" answer filled, resume PDF attached, LinkedIn left blank.
   - **My list** (`/my-list`, stored in `.career-ops-web/jobdesk-list.json`).
     - **Apply to these** walks through the jobs one at a time: career-ops's
       apply opens the real form pre-filled, she submits it herself, then
@@ -349,7 +383,11 @@ it lives only on the owner's Mac.
   drawings in that spirit: a patchwork castle on bird legs that walks along the
   loading bar, a hearth flame with eyes by the percentage, a sky band behind
   every page (drifting clouds by day, stars and a shooting star in dark mode),
-  and a flower meadow with the castle at the foot of the sidebar. The motion
+  and a flower meadow with the castle at the foot of the sidebar. While Find
+  jobs searches: a meadow scene (`howl/scene.tsx`) with the castle walking the
+  path as the search progresses, a cottage, a hopping scarecrow, an airship,
+  birds, a floating island (moon, stars and fireflies at night) and rotating
+  lines. Still original drawings only: no Ghibli characters. The motion
   stops under prefers-reduced-motion. The components always ship and render
   nothing unless the brand file sets the theme.
 - **Model and cost** (2026-10-01): `build-dmg.sh --model=ID` / `BRAND_MODEL`
