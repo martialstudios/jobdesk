@@ -147,6 +147,7 @@ function ago(date: string): string {
   return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
 }
 
+const PER_COMPANY = 3;
 const bandRank = (o: DiscoveredOffer) => (o.fit?.band === "strong" ? 0 : o.fit?.band === "related" ? 1 : o.fit ? 2 : 1);
 // With a dream job (the welcome page's first step), jobs titled like the dream
 // come first, then the ways in it suggested, then the rest.
@@ -238,6 +239,21 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
       ),
     [offers, dream],
   );
+  // Some companies post the same job dozens of times (one per state, "Work
+  // From Home" spelled five ways): at most PER_COMPANY each, best first.
+  const { capped, crowded } = useMemo(() => {
+    const seen = new Map<string, number>();
+    const capped: DiscoveredOffer[] = [];
+    let crowded = 0;
+    for (const o of sorted) {
+      const key = (o.company || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const n = seen.get(key) || 0;
+      seen.set(key, n + 1);
+      if (n < PER_COMPANY) capped.push(o);
+      else crowded++;
+    }
+    return { capped, crowded };
+  }, [sorted]);
   // Where each job is (/api/jobdesk/where): asked once per location.
   const locKey = useMemo(() => Array.from(new Set(offers.map((o) => o.location || ""))).sort().join("\n"), [offers]);
   useEffect(() => {
@@ -263,12 +279,12 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
       (area.remote && w.remote) ||
       (area.miles === 0 && w.us === true));
   const abroad = sorted.filter((o) => placed(o)?.us === false).length;
-  const local = sorted.filter((o) => {
+  const local = capped.filter((o) => {
     const w = placed(o);
     return w ? inArea(w) : false;
   });
   // In the US (or unclear) but further away: behind "Show more elsewhere".
-  const far = sorted.filter((o) => {
+  const far = capped.filter((o) => {
     const w = placed(o);
     return w ? w.us !== false && !inArea(w) : false;
   });
@@ -447,7 +463,8 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
           </div>
           <p className="mt-2 text-xs text-faint">
             {ex.companiesScanned > 0 && ex.phase !== "idle" && `Checked ${ex.companiesScanned.toLocaleString()} companies' job boards this time${ex.companiesAvailable > ex.companiesScanned ? ` (of ${ex.companiesAvailable.toLocaleString()}; Search again checks a different batch)` : ""}. `}
-            {abroad > 0 && `Left out ${abroad} outside the US.`}
+            {abroad > 0 && `Left out ${abroad} outside the US. `}
+            {crowded > 0 && `Showing up to ${PER_COMPANY} jobs per company (${crowded} near-repeats hidden).`}
           </p>
           {sorted.length > 0 && local.length === 0 && !showFar && (
             <p className="mt-4 rounded-xl bg-surface p-4 text-sm text-foreground">

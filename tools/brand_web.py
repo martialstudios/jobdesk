@@ -104,6 +104,16 @@ def main():
          "your pipeline, or take you where you need to go. What would you like to do?\";",
          "  " + json.dumps(hello + " I can help you find jobs, fix up your resume, apply, or follow up. "
                            "What would you like to do?", ensure_ascii=False) + ";")
+    # A chat saved before an update still opens with the old greeting: swap it
+    # for this one.
+    edit(web, "src/components/assistant-console.tsx",
+         "      if (m && m.length) setMessages(m);",
+         "      if (m && m.length) {\n"
+         "        const first = m[0];\n"
+         "        if (first?.role === \"assistant\" && /^Hi — I/.test(msgText(first)) && msgText(first) !== GREETING)\n"
+         "          m[0] = { role: \"assistant\", parts: [{ type: \"text\", text: GREETING }] };\n"
+         "        setMessages(m);\n"
+         "      }")
     if assistant:
         edit(web, "src/components/assistant-console.tsx",
              '<div className="text-sm font-semibold tracking-tight">Assistant</div>',

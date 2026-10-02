@@ -1,9 +1,9 @@
 "use client";
 
 // JobDesk branded builds: a song of the builder's choosing (BRAND_MUSIC, an
-// audio file they own, copied into the build) plays once when the first job
-// search starts (the "resume" of the JobdeskFun overlay, after the quick
-// questions) and keeps going on whatever page they're on. A file already cut
+// audio file they own, copied into the build) plays once when a resume is
+// uploaded (the "start" of the JobdeskFun loading screen) and keeps going on
+// whatever page they're on. A file already cut
 // to length plays as it is, its own fades and all; with BRAND_MUSIC_CLIP
 // (a part of a longer song) it fades in and out here. A small button stops it.
 // Renders nothing without one.
@@ -62,7 +62,7 @@ export function BrandMusic() {
         .catch(() => setPlaying(false));
     };
     const onEvent = (e: Event) => {
-      if ((e as CustomEvent).detail === "resume") play();
+      if ((e as CustomEvent).detail === "start") play();
     };
     const onStop = () => stopAll();
     window.addEventListener("jobdesk:fun", onEvent);
