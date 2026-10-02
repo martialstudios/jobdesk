@@ -7,12 +7,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, ExternalLink, FileText, Loader2, Send, Wand2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, Download, ExternalLink, FileText, Loader2, Send, Wand2 } from "lucide-react";
 import { instrumentSerif } from "@/lib/fonts";
 import { useJobs } from "@/components/jobs/job-store";
 import { useApply } from "@/components/apply/apply-provider";
 import { tierOf } from "./match";
 import { Doc } from "./doc";
+import { canAutofill } from "./apply-kind";
 
 type Job = {
   n: string;
@@ -67,6 +68,7 @@ export function JobView({ n }: { n: string }) {
     );
 
   const tier = tierOf(job.score);
+  const easy = canAutofill(job.url);
   const tailored = job.tailored || tailoredNow;
   const tailor = () =>
     startJob({ title: `Tailoring resume · ${job.company}`, subtitle: job.role, kind: "pdf", input: n, page: `/job/${n}` });
@@ -131,9 +133,20 @@ export function JobView({ n }: { n: string }) {
       )}
 
       <div className="mt-10 flex flex-wrap gap-2.5">
-        <button onClick={applyNow} className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 font-medium text-brand-foreground hover:bg-brand-200">
-          <Send className="size-4" /> Apply
-        </button>
+        {easy ? (
+          <button onClick={applyNow} className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 font-medium text-brand-foreground hover:bg-brand-200">
+            <Send className="size-4" /> Apply
+          </button>
+        ) : (
+          <a href={job.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 font-medium text-brand-foreground hover:bg-brand-200">
+            <ExternalLink className="size-4" /> Apply on their site
+          </a>
+        )}
+        {!easy && !tailored && (
+          <a href="/api/jobdesk/resume-pdf" target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2.5 text-foreground">
+            <Download className="size-4" /> My resume (PDF)
+          </a>
+        )}
         {tailored ? (
           <a
             href={`/api/cv-pdf?n=${encodeURIComponent(n)}&company=${encodeURIComponent(job.company)}`}
@@ -158,7 +171,9 @@ export function JobView({ n }: { n: string }) {
         </a>
       </div>
       <p className="mt-3 text-sm text-faint">
-        Apply fills in the real form with {tailored ? "your tailored resume" : "your resume"} attached. You check it and press Submit yourself.
+        {easy
+          ? `Apply fills in the real form with ${tailored ? "your tailored resume" : "your resume"} attached. You check it and press Submit yourself.`
+          : "This company's form is on its own site and asks for an account first, so it can't be filled in for you. Upload your resume PDF there; most sites fill in the rest from it."}
       </p>
 
       {job.coverLetter && (

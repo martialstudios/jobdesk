@@ -106,6 +106,19 @@ def main():
     edit(web, "src/components/app-shell.tsx",
          'import { BetaBanner } from "@/components/beta/beta-banner";',
          'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { TaskRunner } from "@/components/jobdesk/tasks";')
+    # Apply drafts answers from config/profile.yml, which starts as a copy of
+    # career-ops's example person: empty anything still identical to it first.
+    edit(web, "src/app/api/apply/prefill/route.ts",
+         'export async function POST(req: Request) {\n',
+         'export async function POST(req: Request) {\n  scrubExampleProfile();\n')
+    edit(web, "src/app/api/apply/prefill/route.ts",
+         'import { runPlanner } from "@/lib/apply/planner";',
+         'import { runPlanner } from "@/lib/apply/planner";\nimport { scrubExampleProfile } from "@/lib/jobdesk/scrub";')
+    # A search started from Find jobs keeps Find jobs' address (career-ops
+    # moves it to /explore, its own screen, so a reload left Find jobs).
+    edit(web, "src/components/explore/explore-provider.tsx",
+         '      window.history.replaceState(null, "", `/explore${qs ? `?${qs}` : ""}`);\n',
+         '      if (window.location.pathname.startsWith("/explore")) window.history.replaceState(null, "", `/explore${qs ? `?${qs}` : ""}`);\n')
     # The optional theme's drawings (components/howl): they render nothing
     # unless the brand file sets BRAND_THEME.
     edit(web, "src/components/app-shell.tsx", '      <div className="flex min-h-screen">\n',

@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { careerOpsRoot } from "@/lib/career-ops";
 import { resolveCli } from "@/lib/clis";
 import { readGoal } from "@/lib/jobdesk/dream";
+import { scrubExampleProfile } from "@/lib/jobdesk/scrub";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,10 +81,14 @@ export async function POST(req: Request) {
   if (!fs.existsSync(path.join(/* turbopackIgnore: true */ root, "cv.md"))) {
     return Response.json({ error: "no resume yet" }, { status: 400 });
   }
-  const cli = resolveCli("claude");
-  if (!cli) return Response.json({ error: "Claude isn't set up." }, { status: 500 });
+  // No example person, whatever happens to the Claude run below.
+  scrubExampleProfile();
   const dir = path.join(/* turbopackIgnore: true */ root, ".career-ops-web");
   fs.mkdirSync(dir, { recursive: true });
+  // The questions were answered: Find jobs searches from here on.
+  fs.writeFileSync(path.join(dir, "jobdesk-answered"), new Date().toISOString());
+  const cli = resolveCli("claude");
+  if (!cli) return Response.json({ error: "Claude isn't set up." }, { status: 500 });
   const lock = path.join(dir, "jobdesk-personalize.lock");
   try {
     // One at a time; a lock older than 10 minutes is a leftover.
@@ -98,7 +103,10 @@ export async function POST(req: Request) {
     ["-p", PROMPT + goalPrompt() + payPrompt(pay), "--permission-mode", "acceptEdits", "--allowedTools", "Read,Edit,Write,Glob,Grep"],
     { cwd: root, env: process.env, detached: true, stdio: ["ignore", log, log] },
   );
-  child.on("close", () => fs.rmSync(lock, { force: true }));
+  child.on("close", () => {
+    fs.rmSync(lock, { force: true });
+    scrubExampleProfile();
+  });
   child.on("error", () => fs.rmSync(lock, { force: true }));
   child.unref();
   return Response.json({ started: true });

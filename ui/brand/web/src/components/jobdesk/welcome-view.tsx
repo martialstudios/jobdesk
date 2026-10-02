@@ -30,6 +30,7 @@ export function WelcomeView() {
   const [newRole, setNewRole] = useState("");
   const [location, setLocation] = useState("");
   const [remote, setRemote] = useState(true);
+  const [skipSenior, setSkipSenior] = useState(true);
   const [minPay, setMinPay] = useState("");
   const [maxPay, setMaxPay] = useState("");
   const [busy, setBusy] = useState(false);
@@ -105,10 +106,10 @@ export function WelcomeView() {
       ...DEFAULT_FILTERS,
       ats: DEFAULT_FILTERS.ats.filter((a) => a !== "workday"),
       positive: roles,
-      // Someone moving into a new field is looking for a way in: leave out
-      // the senior versions of the titles ("UX Designer" also matches
-      // "Senior UX Designer").
-      negative: plan ? SENIOR : [],
+      // Titles match as text, so "UX Designer" also finds "Senior UX
+      // Designer" and "Customer Experience" finds "Director of Customer
+      // Experience": left out unless they ask for them.
+      negative: skipSenior || plan ? SENIOR : [],
       sinceDays: 30,
       // Wider than the default 150 companies per job board (about 45 s).
       limitPerAts: 500,
@@ -166,6 +167,10 @@ export function WelcomeView() {
         <label className="mt-3 inline-flex cursor-pointer items-center gap-2.5 text-foreground">
           <input type="checkbox" className="size-4 accent-[hsl(26_73%_51%)]" checked={remote} onChange={() => setRemote((v) => !v)} />
           I&apos;m open to remote jobs too
+        </label>
+        <label className="mt-2 flex cursor-pointer items-center gap-2.5 text-foreground">
+          <input type="checkbox" className="size-4 accent-[hsl(26_73%_51%)]" checked={skipSenior} onChange={() => setSkipSenior((v) => !v)} />
+          Skip senior, lead and director jobs
         </label>
       </section>
 
