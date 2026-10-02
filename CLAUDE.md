@@ -368,6 +368,18 @@ it lives only on the owner's Mac.
     older than the resume are read again (their fit line is about it). Only
     the top 24 jobs are summarized automatically; the rest on "Quick read"
     (the owner's install had summarized 1,036 jobs).
+  - **Company read** (2026-10-02, quick read v2): each job's read also says
+    who the employer is (2–3 sentences from the posting: what they do, size or
+    stage, mission), industry, perks and how they work, behind "More about this
+    job and <company>". Cached reads from v1 are read again.
+  - **All applications** (Follow-ups): beside "By next step", one list of
+    every application with status counts and filters (waiting, interview,
+    offer, didn't get it), ordered newest/oldest/company/next follow-up; a row
+    opens the full card.
+  - **A picture under the menu** (`BRAND_ART` in the brand file, copied into
+    the build only; `brands/` is git-ignored apart from the example). A
+    hand-drawn witch-on-a-broom SVG was tried and taken out (owner: "looks
+    terrible"); the owner may add their own picture there instead.
   - **First application** (`cheer.tsx`, `BRAND_CHEER`): the very first job
     marked sent (none applied before, per My list) gets a confetti
     celebration with the builder's line ("Ryan says, You got this!" for Asal);

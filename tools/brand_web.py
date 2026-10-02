@@ -134,7 +134,10 @@ def main():
          "              </div>\n            </div>\n            <HowlMeadow />\n          </div>\n        </aside>")
     edit(web, "src/components/app-shell.tsx",
          'import { ThemeToggle } from "@/components/theme-toggle";',
-         'import { ThemeToggle } from "@/components/theme-toggle";\nimport { HowlMeadow, HowlSky, HowlStyles } from "@/components/howl/decor";')
+         'import { ThemeToggle } from "@/components/theme-toggle";\nimport { HowlMeadow, HowlSky, HowlStyles } from "@/components/howl/decor";\n'
+         'import { BrandArt } from "@/components/jobdesk/brand-art";')
+    # Under the menu: their picture, if the brand file names one (BRAND_ART).
+    edit(web, "src/components/app-shell.tsx", "          </nav>\n", "          </nav>\n          <BrandArt />\n")
     # career-ops's first-score popup leads with the raw grade; the job page
     # leads with strengths instead.
     edit(web, "src/components/app-shell.tsx", "        <FirstScoreView />\n", "")
@@ -343,6 +346,19 @@ def main():
         die("BRAND_FUN_DOTS must be a JSON list of lines")
     fun = {"lines": [[t, s] for t, s in lines], "reveal": reveal, "revealSeconds": reveal_secs, "dots": dots}
     cheer = os.environ.get("BRAND_CHEER", "").strip()
+    # A picture of their choosing under the menu: copied into the build, never
+    # into the repository (brand files and their pictures stay on the builder's Mac).
+    art_url = ""
+    art = os.environ.get("BRAND_ART", "").strip()
+    if art:
+        src = art if os.path.isabs(art) else os.path.join(ROOT, art)
+        ext = os.path.splitext(src)[1].lower()
+        if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif"):
+            die(f"BRAND_ART {art!r}: use a .png, .jpg, .webp or .gif picture")
+        if not os.path.isfile(src):
+            die(f"BRAND_ART {art!r}: no such picture")
+        shutil.copyfile(src, os.path.join(web, "public", "jobdesk-art" + ext))
+        art_url = "/jobdesk-art" + ext
     theme = os.environ.get("BRAND_THEME", "").strip()
     if theme not in ("", "howl"):
         die(f"BRAND_THEME {theme!r}: the only theme is howl (or leave it empty)")
@@ -351,6 +367,7 @@ def main():
         f.write("export const JOBDESK_BRAND_NAME = " + json.dumps(name, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_THEME: string = " + json.dumps(theme) + ";\n")
         f.write("export const JOBDESK_CHEER: string = " + json.dumps(cheer, ensure_ascii=False) + ";\n")
+        f.write("export const JOBDESK_ART: string = " + json.dumps(art_url) + ";\n")
         f.write("export const JOBDESK_FUN: { lines: [string, number | null][]; reveal: string; "
                 "revealSeconds: number; dots: string[] } = " + json.dumps(fun, ensure_ascii=False) + ";\n")
 

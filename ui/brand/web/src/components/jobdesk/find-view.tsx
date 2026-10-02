@@ -51,7 +51,7 @@ function store(key: string, value: unknown) {
   }
 }
 
-function QuickRead({ s, open, onToggle, onRead }: { s: SynopsisState; open: boolean; onToggle: () => void; onRead: () => void }) {
+function QuickRead({ s, open, onToggle, onRead, company }: { s: SynopsisState; open: boolean; onToggle: () => void; onRead: () => void; company: string }) {
   if (s === "loading")
     return (
       <div className="mt-2 flex items-center gap-2 text-sm text-faint">
@@ -65,7 +65,8 @@ function QuickRead({ s, open, onToggle, onRead }: { s: SynopsisState; open: bool
         Quick read <ChevronDown className="size-3.5" />
       </button>
     );
-  const chips = [s.type, s.level && `${s.level} level`, s.where, s.pay].filter(Boolean);
+  const chips = [s.industry, s.type, s.level && `${s.level} level`, s.where, s.pay].filter(Boolean);
+  const more = s.doing.length > 0 || s.wants.length > 0 || s.fit || s.company || s.perks.length > 0;
   return (
     <div className="mt-2">
       <p className="text-sm text-foreground">{s.summary}</p>
@@ -78,26 +79,52 @@ function QuickRead({ s, open, onToggle, onRead }: { s: SynopsisState; open: bool
           ))}
         </div>
       )}
-      {(s.doing.length > 0 || s.wants.length > 0 || s.fit) && (
+      {more && (
         <button type="button" onClick={onToggle} className="mt-2 inline-flex items-center gap-1 text-sm text-brand">
-          {open ? "Less" : "What it involves"} <ChevronDown className={`size-3.5 transition ${open ? "rotate-180" : ""}`} />
+          {open ? "Less" : `More about this job${s.company ? ` and ${company || "the company"}` : ""}`}{" "}
+          <ChevronDown className={`size-3.5 transition ${open ? "rotate-180" : ""}`} />
         </button>
       )}
       {open && (
-        <div className="mt-2 grid gap-3 text-sm sm:grid-cols-2">
-          {s.doing.length > 0 && (
+        <div className="mt-3 space-y-4 rounded-xl bg-surface/60 p-4 text-sm">
+          {s.company && (
             <div>
-              <div className="font-medium text-foreground">What you&apos;d do</div>
-              <ul className="mt-1 space-y-1 text-muted">{s.doing.map((d) => <li key={d}>• {d}</li>)}</ul>
+              <div className="font-medium text-foreground">About {company || "the company"}</div>
+              <p className="mt-1 text-muted">{s.company}</p>
+              {s.culture.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {s.culture.map((c) => (
+                    <span key={c} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">{c}</span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          {s.wants.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {s.doing.length > 0 && (
+              <div>
+                <div className="font-medium text-foreground">What you&apos;d do</div>
+                <ul className="mt-1 space-y-1 text-muted">{s.doing.map((d) => <li key={d}>• {d}</li>)}</ul>
+              </div>
+            )}
+            {s.wants.length > 0 && (
+              <div>
+                <div className="font-medium text-foreground">What they want</div>
+                <ul className="mt-1 space-y-1 text-muted">{s.wants.map((d) => <li key={d}>• {d}</li>)}</ul>
+              </div>
+            )}
+          </div>
+          {s.perks.length > 0 && (
             <div>
-              <div className="font-medium text-foreground">What they want</div>
-              <ul className="mt-1 space-y-1 text-muted">{s.wants.map((d) => <li key={d}>• {d}</li>)}</ul>
+              <div className="font-medium text-foreground">Perks they mention</div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {s.perks.map((p) => (
+                  <span key={p} className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">{p}</span>
+                ))}
+              </div>
             </div>
           )}
-          {s.fit && <p className="text-foreground sm:col-span-2">✨ {s.fit}</p>}
+          {s.fit && <p className="text-foreground">✨ {s.fit}</p>}
         </div>
       )}
     </div>
@@ -445,6 +472,7 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
                     </button>
                     <QuickRead
                       s={reads[o.url]}
+                      company={o.company}
                       onRead={() => setExtra((x) => new Set(x).add(o.url))}
                       open={opened.has(o.url)}
                       onToggle={() =>
