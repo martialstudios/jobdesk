@@ -32,9 +32,14 @@ export type Synopsis = {
   perks: string[];
   /** Notes like "Small team" or "Fully remote company", only when stated. */
   culture: string[];
+  /** The employer's name as they write it ("DoorDash"), not the job board's slug. */
+  companyName: string;
+  /** Their website's domain, when the posting gives it (for the right logo). */
+  website: string;
 };
-// v2 added the company read; older cached summaries are read again.
-const VERSION = 2;
+// v2 added the company read, v3 its proper name and website; older cached
+// summaries are read again.
+const VERSION = 3;
 export type SynopsisJob = { url: string; title: string; company: string; location?: string };
 /** null: the posting couldn't be read. */
 export type SynopsisResult = Synopsis | null;
@@ -52,6 +57,12 @@ const text = (v: unknown, max: number) => {
 };
 const texts = (v: unknown, max: number, count: number) =>
   Array.isArray(v) ? v.map((x) => text(x, max)).filter(Boolean).slice(0, count) : [];
+
+// "https://www.DoorDash.com/careers" -> "doordash.com"; anything else -> "".
+function domainOf(v: unknown): string {
+  const d = String(v ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[/?#\s]/)[0];
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d) && d.length <= 120 ? d : "";
+}
 
 export function cleanSynopsis(raw: unknown): Synopsis | null {
   if (!raw || typeof raw !== "object") return null;
@@ -75,6 +86,8 @@ export function cleanSynopsis(raw: unknown): Synopsis | null {
     industry: text(o.industry, 60),
     perks: texts(o.perks, 90, 6),
     culture: texts(o.culture, 90, 3),
+    companyName: text(o.companyName, 80),
+    website: domainOf(o.website),
   };
 }
 
@@ -174,11 +187,14 @@ export function synopsisPrompt(jobs: { job: SynopsisJob; posting: string }[]): s
     "- industry: a few words for what they're in, like \"Personal finance app\" or \"Children's books\".",
     "- perks: up to 6 short benefits the posting states (health insurance, 401k match, remote stipend, PTO days).",
     "- culture: up to 3 short notes on how they work, only if stated (\"Fully remote team\", \"Small team\", \"4-day week\").",
+    "- companyName: the employer's name exactly as the posting writes it, with its own capitals and",
+    "  spacing (\"DoorDash\", \"Rush Street Interactive\"), not a web address or a job-board code.",
+    "- website: the employer's own website domain if the posting gives it, like \"doordash.com\"; else \"\".",
     "- fit: one honest, kind sentence (at most 22 words) on how it fits this person, from their resume and goal",
     "  below: what carries over, or that it's a stretch. Speak to them as \"you\".",
     "",
     "Reply with ONLY this JSON between the lines <<<JSON and JSON>>>, one entry per job, by its number:",
-    '{"1": {"summary": "", "doing": [], "wants": [], "level": "", "type": "", "where": "", "pay": "", "company": "", "industry": "", "perks": [], "culture": [], "fit": ""}}',
+    '{"1": {"summary": "", "doing": [], "wants": [], "level": "", "type": "", "where": "", "pay": "", "company": "", "companyName": "", "website": "", "industry": "", "perks": [], "culture": [], "fit": ""}}',
     "",
     about(),
     "",

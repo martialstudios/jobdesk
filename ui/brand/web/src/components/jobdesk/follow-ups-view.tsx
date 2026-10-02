@@ -12,6 +12,7 @@ import Link from "next/link";
 import { ArrowRight, Bell, Check, ChevronDown, Copy, ExternalLink, Loader2, Mail, PartyPopper, X } from "lucide-react";
 import { instrumentSerif } from "@/lib/fonts";
 import { useList, type ListItem } from "./use-list";
+import { BrandLogo, prettyCompany } from "./brand-logo";
 
 const DAY = 86_400_000;
 const WAIT_DAYS = 7;
@@ -134,7 +135,11 @@ export function FollowUpsView() {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="font-medium text-foreground">{i.title}</div>
-            <div className="text-sm text-muted">{[i.company, i.location].filter(Boolean).join(" · ")}</div>
+            <div className="mt-0.5 flex items-center gap-2 text-sm">
+              <BrandLogo name={prettyCompany(i.company)} size={22} />
+              <span className="font-semibold text-foreground">{prettyCompany(i.company)}</span>
+              {i.location && <span className="truncate text-muted">· {i.location}</span>}
+            </div>
             <div className="mt-1 text-sm text-faint">
               Applied {i.appliedAt ? `${day(i.appliedAt)}, ${ago(i.appliedAt)}` : "recently"}
               {n > 0 && ` · followed up ${n === 1 ? "once" : "twice"} (last ${day(Math.max(...(i.followUps ?? [0])))})`}
@@ -315,7 +320,7 @@ export function FollowUpsView() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-foreground">{i.title}</div>
                   <div className="truncate text-sm text-muted">
-                    {i.company} · applied {i.appliedAt ? day(i.appliedAt) : "recently"}
+                    <span className="font-medium text-foreground">{prettyCompany(i.company)}</span> · applied {i.appliedAt ? day(i.appliedAt) : "recently"}
                     {(i.followUps?.length ?? 0) > 0 && ` · followed up ${i.followUps!.length}×`}
                   </div>
                 </div>
