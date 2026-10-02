@@ -1,6 +1,6 @@
 #!/bin/bash
-# JobDesk.app's launcher (DMG edition), in Contents/Resources. The applet
-# (macos/JobDeskDMG.applescript) calls it for everything:
+# JobDesk.app's launcher (DMG edition), in Contents/Resources. The app
+# (macos/app/main.swift) calls it for everything:
 #
 #   launch where          ok | dmg (running from the disk image) | translocated
 #   launch needs-setup    yes | no: is ~/.jobdesk set up from this very build?

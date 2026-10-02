@@ -15,10 +15,10 @@ const CSS = `
 export function BrandArt() {
   if (!JOBDESK_ART) return null;
   return (
-    <div aria-hidden="true" className="pointer-events-none fixed right-[3vw] top-3 z-0 hidden md:block">
+    <div aria-hidden="true" className="pointer-events-none fixed right-[1.2vw] top-1 z-0 hidden md:block">
       <style>{CSS}</style>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={JOBDESK_ART} alt="" className="jd-art h-auto w-auto" style={{ maxHeight: 150 }} />
+      <img src={JOBDESK_ART} alt="" className="jd-art h-auto w-auto" style={{ maxHeight: 118 }} />
     </div>
   );
 }

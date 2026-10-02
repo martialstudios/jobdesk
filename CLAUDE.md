@@ -208,7 +208,7 @@ tools prompt, no downloads and no AI login. `tools/build-dmg.sh` builds
   - A moved `.next` build runs fine (checked 2026-09-28).
   - The Intel headless Chromium comes via
     `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=mac15`.
-- **First open runs `macos/dmg-setup.sh`**, via the applet →
+- **First open runs `macos/dmg-setup.sh`**, via the app (`macos/app/main.swift`) →
   `Contents/Resources/launch setup-start`. It sources `install.sh`'s helpers
   (locks, paths, `write_config`, `install_jobdesk_files`) and lays out the same
   `~/.jobdesk` + `~/career-ops` as the Terminal install. It reports
@@ -497,7 +497,7 @@ it lives only on the owner's Mac.
 | `install.sh` | Installer / updater / repairer. Everything is in functions, with `main "$@"` last. It ends with the marker `__JOBDESK_INSTALLER_END__`, and `jobdesk update` refuses a download without it. |
 | `bin/jobdesk` | Control script, installed to `~/.jobdesk/bin` and linked from `~/.local/bin`. Subcommands: `open`, `start`, `stop`, `restart`, `status`, `alive`, `login`, `update`, `doctor`, `logs`, `uninstall`, `version`. It finds its install from its own path. |
 | `macos/JobDesk.applescript` | Applet source. `__JOBDESK_BIN__` is replaced at install time. |
-| `macos/JobDeskDMG.applescript` | The DMG edition's applet: first-run setup with a progress window, then the same open/idle/quit behavior. |
+| `macos/app/main.swift` | The DMG edition's app (2026-10-02, replaced an AppleScript applet): a native window (WebKit) instead of a browser tab. First-run setup with a progress window, then `launch serve-url` starts the server and the window loads the web app. Uploads (file picker), PDFs (saved to Downloads, opened in Preview), other sites and mailto (default apps), JS dialogs, Edit/View/Window menus, accepts the first click on an inactive window, remembers its frame; quitting stops the server; quits if the server stops (except during an in-app update). Built universal (arm64 + x86_64, macOS 11.3+) by `tools/build-dmg.sh`. |
 | `macos/dmg/launch` | Inside the DMG app (`Contents/Resources`): `where`, `needs-setup`, `setup-start`, `setup-status`, and passes everything else to `jobdesk`. A `test-home` file next to it (test builds only) redirects HOME. |
 | `macos/dmg-setup.sh` | The DMG edition's first-run setup (see above). `JOBDESK_DMG_ARCH=x64` sets up the Intel parts, for testing under Rosetta. |
 | `macos/shims/git` | The git shim. |
