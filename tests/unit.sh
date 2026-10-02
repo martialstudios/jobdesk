@@ -540,6 +540,8 @@ EOF
   expect_eq "launcher: an in-app update is newer than the app" "$(L needs-setup)" no
   printf '0.3.0 career-ops-1.35.0 node-v24 claude-2 20260901T100000Z\n' > "$d/lhome/.jobdesk/.dmg-build"
   expect_eq "launcher: an older install still sets up" "$(L needs-setup)" yes
+  printf 'older build\n' > "$d/lhome/.jobdesk/.dmg-build"
+  expect_eq "launcher: any other build sets up" "$(L needs-setup)" yes
   printf 'build-1\n' > "$res/payload/build-id"
   printf 'build-1\n' > "$d/lhome/.jobdesk/.dmg-build"
   expect_eq "launcher: passes commands to jobdesk" "$(L alive)" "ran:alive"
