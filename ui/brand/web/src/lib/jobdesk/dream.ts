@@ -39,7 +39,9 @@ export function extractJson(out: string): unknown {
   const fenced = /<<<JSON\s*([\s\S]*?)\s*JSON>>>/.exec(out)?.[1];
   const raw = fenced ?? out.slice(out.indexOf("{"), out.lastIndexOf("}") + 1);
   try {
-    return JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    // A raw line break inside a string (models do this) is invalid JSON;
+    // as a space it reads the same.
+    return JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[\u0000-\u001f]+/g, " "));
   } catch {
     return null;
   }

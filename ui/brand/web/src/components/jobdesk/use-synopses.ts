@@ -19,6 +19,7 @@ export function useSynopses(jobs: Job[]): Record<string, SynopsisState> {
   const asked = useRef(new Set<string>());
   const queue = useRef<Job[][]>([]);
   const active = useRef(0);
+  const retried = useRef(new Set<string>());
 
   useEffect(() => {
     const fresh = jobs.filter((j) => !asked.current.has(j.url));
@@ -39,8 +40,15 @@ export function useSynopses(jobs: Job[]): Record<string, SynopsisState> {
           .then((r) => r.json())
           .then((d: { items?: Record<string, SynopsisResult> }) => {
             const items = d.items || {};
-            // Missing from the answer: no summary this time (not "unreadable").
-            setMap((m) => ({ ...m, ...Object.fromEntries(batch.map((j) => [j.url, j.url in items ? items[j.url] : undefined])) }));
+            // Missing from the answer (a reply that didn't parse): asked once
+            // more; after that, no summary this time (not "unreadable").
+            const again = batch.filter((j) => !(j.url in items) && !retried.current.has(j.url));
+            again.forEach((j) => retried.current.add(j.url));
+            if (again.length) queue.current.push(again);
+            setMap((m) => ({
+              ...m,
+              ...Object.fromEntries(batch.filter((j) => !again.includes(j)).map((j) => [j.url, j.url in items ? items[j.url] : undefined])),
+            }));
           })
           .catch(() => setMap((m) => ({ ...m, ...Object.fromEntries(batch.map((j) => [j.url, undefined])) })))
           .finally(() => {
