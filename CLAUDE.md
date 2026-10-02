@@ -414,6 +414,13 @@ it lives only on the owner's Mac.
       `tools/publish-update.sh --brand=brands/asal.env --notes="- what's new"`.
     - Verified end to end on a test channel: notice with notes, 147 MB
       download, install, server back in ~25 s, "Updated!" with notes.
+  - **App icon** (`BRAND_ICON`, a 1024 px PNG; `tools/build-dmg.sh` makes
+    the `.icns` with sips + iconutil and uses it for the web logo/tab icon
+    too). Asal's: an original Ghibli-spirit drawing (owner: "whimsical and
+    full of wonder and hope, but still job related"): a leather briefcase
+    with a sprout on its handle, resting on a sunrise cumulus, a paper plane
+    looping toward the sun on a trail of sparkles. Source
+    `brands/asal-icon.svg`, rendered with the bundled headless Chromium.
   - **First application** (`cheer.tsx`, `BRAND_CHEER`): the very first job
     marked sent (none applied before, per My list) gets a confetti
     celebration with the builder's line ("Ryan says, You got this!" for Asal);

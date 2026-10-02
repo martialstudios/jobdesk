@@ -77,7 +77,7 @@ die() { printf 'build-dmg: %s\n' "$*" >&2; exit 1; }
 sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
 
 [ "$(uname -s)" = Darwin ] || die "Build JobDesk.dmg on a Mac."
-for tool in curl git tar hdiutil swiftc lipo codesign plutil security shasum; do
+for tool in curl git tar hdiutil swiftc lipo codesign plutil security shasum sips iconutil; do
   command -v "$tool" >/dev/null 2>&1 || die "'$tool' is missing."
 done
 if [ "$(sysctl -in hw.optional.arm64 2>/dev/null)" = 1 ]; then HOST=arm64; else HOST=x64; fi
@@ -145,6 +145,24 @@ if [ -n "$UPDATE_REPO$UPDATE_CHANNEL" ]; then
   [ -n "$UPDATE_TOKEN" ] || die "Updates are on for this brand but there's no token in the Keychain under '$UPDATE_TOKEN_SERVICE' (a GitHub token that can only read $UPDATE_REPO)."
 fi
 
+# The app's icon: JobDesk's, or the brand's own (BRAND_ICON, a 1024 px PNG):
+# the Mac icon (.icns, every size), the logo in the web app and its tab icon.
+ICON_PNG="$ROOT/assets/JobDesk.png"
+ICON_ICNS="$ROOT/assets/JobDesk.icns"
+if [ -n "${BRAND_ICON:-}" ]; then
+  case "$BRAND_ICON" in /*) ICON_PNG="$BRAND_ICON" ;; *) ICON_PNG="$ROOT/$BRAND_ICON" ;; esac
+  [ -f "$ICON_PNG" ] || die "BRAND_ICON: no picture at $ICON_PNG."
+  mkdir -p "$WORK/icon.iconset"
+  for s in 16 32 128 256 512; do
+    if ! { sips -z "$s" "$s" "$ICON_PNG" --out "$WORK/icon.iconset/icon_${s}x${s}.png" >/dev/null &&
+           sips -z $((s * 2)) $((s * 2)) "$ICON_PNG" --out "$WORK/icon.iconset/icon_${s}x${s}@2x.png" >/dev/null; }; then
+      die "BRAND_ICON: couldn't resize $ICON_PNG."
+    fi
+  done
+  iconutil -c icns -o "$WORK/brand.icns" "$WORK/icon.iconset" || die "BRAND_ICON: couldn't make the Mac icon."
+  ICON_ICNS="$WORK/brand.icns"
+fi
+
 VERSION=$(tr -d ' \n' < "$ROOT/VERSION")
 PAY="$WORK/payload"
 mkdir -p "$PAY/jobdesk" "$WORK/common/ui" "$WORK/dmg"
@@ -193,7 +211,7 @@ cp "$CO/VERSION" "$UI/VERSION"
 cp "$ROOT/ui/jobdesk-start.html" "$UI/web/public/jobdesk-start.html"
 if [ -n "$BRAND_FILE" ]; then
   say "Branding it: $APP_NAME"
-  python3 "$ROOT/tools/brand_web.py" "$UI/web" "$ROOT/assets/JobDesk.png" || die "Couldn't brand the web UI (see above)."
+  python3 "$ROOT/tools/brand_web.py" "$UI/web" "$ICON_PNG" || die "Couldn't brand the web UI (see above)."
 fi
 if ! ( cd "$UI/web" && npm ci --no-audit --no-fund && npm run build && npm prune --omit=dev --no-audit --no-fund ) >> "$LOG" 2>&1; then
   tail -n 60 "$LOG" >&2
@@ -325,6 +343,7 @@ PLIST
   JOBDESK_VERSION="$VERSION"   # sourcing install.sh blanked it
   brand_app "$APP"
 ) || die "Couldn't brand JobDesk.app."
+cp "$ICON_ICNS" "$APP/Contents/Resources/applet.icns" || die "Couldn't set the app's icon."
 if ! { plutil -replace CFBundleName -string "$APP_NAME" "$APP/Contents/Info.plist" &&
        plutil -replace CFBundleDisplayName -string "$APP_NAME" "$APP/Contents/Info.plist"; }; then
   die "Couldn't name the app."
