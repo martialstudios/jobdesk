@@ -8,6 +8,9 @@ import path from "node:path";
 import { careerOpsRoot, readApplications } from "@/lib/career-ops";
 
 export type ListStatus = "saved" | "applied" | "skipped";
+/** After applying: what happened (Follow-ups). */
+export type ListOutcome = "waiting" | "interview" | "offer" | "rejected";
+const OUTCOMES: ListOutcome[] = ["waiting", "interview", "offer", "rejected"];
 export type ListItem = {
   url: string;
   company: string;
@@ -18,6 +21,19 @@ export type ListItem = {
   addedAt: number;
   status: ListStatus;
   appliedAt?: number;
+  /** When they followed up (Follow-ups). */
+  followUps?: number[];
+  outcome?: ListOutcome;
+  /** Follow up again on this day instead of the usual week. */
+  nextAt?: number;
+  notes?: string;
+};
+export type ListPatch = {
+  status?: ListStatus;
+  followedUp?: boolean;
+  outcome?: ListOutcome;
+  nextAt?: number | null;
+  notes?: string;
 };
 export type ListView = ListItem & {
   /** Tracker number once it's been scored. */
@@ -115,14 +131,23 @@ export function addToList(offers: Partial<ListItem>[]): number {
   return added;
 }
 
-export function updateItem(url: string, patch: Partial<Pick<ListItem, "status">>): boolean {
+export function updateItem(url: string, patch: ListPatch): boolean {
   const items = readList();
   const item = items.find((i) => normalizeUrl(i.url) === normalizeUrl(url));
   if (!item) return false;
   if (patch.status && ["saved", "applied", "skipped"].includes(patch.status)) {
+    // Applying again doesn't move the date they first applied.
+    if (patch.status === "applied" && !(item.status === "applied" && item.appliedAt)) item.appliedAt = Date.now();
     item.status = patch.status;
-    if (patch.status === "applied") item.appliedAt = Date.now();
   }
+  if (patch.followedUp) {
+    item.followUps = [...(item.followUps || []), Date.now()];
+    delete item.nextAt;
+  }
+  if (patch.outcome && OUTCOMES.includes(patch.outcome)) item.outcome = patch.outcome;
+  if (patch.nextAt === null) delete item.nextAt;
+  else if (typeof patch.nextAt === "number" && Number.isFinite(patch.nextAt)) item.nextAt = patch.nextAt;
+  if (typeof patch.notes === "string") item.notes = patch.notes.slice(0, 4000);
   writeList(items);
   return true;
 }

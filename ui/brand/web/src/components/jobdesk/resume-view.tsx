@@ -6,7 +6,7 @@
 // symbols), "Ask for a change" (Claude edits, they approve), or a new upload.
 
 import { useEffect, useState } from "react";
-import { Download, Loader2, MessageSquare, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
+import { Download, Loader2, MessageSquare, Pencil, Plus, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { instrumentSerif } from "@/lib/fonts";
 import { CvIngest } from "@/components/cv/cv-ingest";
 import { Doc } from "./doc";
@@ -109,6 +109,62 @@ const rowsFor = (t: string) => Math.min(14, Math.max(2, t.split("\n").length + 1
 
 type Mode = "view" | "edit" | "ask" | "upload";
 
+// Starting over, or handing the app to someone else.
+function StartFresh() {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const go = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await fetch("/api/jobdesk/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "start fresh" }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || "Couldn't start fresh.");
+      // What this browser remembers about the old searches and list.
+      try {
+        for (const k of Object.keys(localStorage)) if (k.startsWith("jobdesk:")) localStorage.removeItem(k);
+        sessionStorage.clear();
+      } catch {
+        /* nothing remembered */
+      }
+      window.location.href = "/";
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="mt-12 rounded-2xl border border-border p-5">
+      <h2 className="font-medium text-foreground">Start fresh</h2>
+      <p className="mt-1 text-sm text-muted">
+        Starting over, or giving this app to someone else? This clears the resume, your answers, My list, follow-ups,
+        scores and tailored resumes, and takes you back to the start. Nothing is deleted: it all goes into a backup folder.
+      </p>
+      {!asking ? (
+        <button onClick={() => setAsking(true)} className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-sm text-foreground hover:border-red-400">
+          <RotateCcw className="size-3.5" /> Start fresh
+        </button>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-sm text-foreground">Are you sure?</span>
+          <button onClick={() => void go()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60">
+            {busy && <Loader2 className="size-3.5 animate-spin" />} Yes, start fresh
+          </button>
+          <button onClick={() => setAsking(false)} disabled={busy} className="rounded-full px-3 py-2 text-sm text-muted">
+            Keep everything
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+    </section>
+  );
+}
+
 export function ResumeView() {
   const [md, setMd] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("view");
@@ -192,7 +248,7 @@ export function ResumeView() {
               <MessageSquare className="size-3.5" /> Ask for a change
             </button>
             <button onClick={() => { setMode("upload"); setMsg(""); }} className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-2 text-sm text-foreground hover:border-brand/50">
-              <Upload className="size-3.5" /> Upload a new one
+              <Upload className="size-3.5" /> Replace my resume
             </button>
             <a href="/api/jobdesk/resume-pdf" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-sm font-medium text-brand-foreground">
               <Download className="size-3.5" /> Download PDF
@@ -213,9 +269,14 @@ export function ResumeView() {
           </div>
         ))}
 
+      {mode === "view" && md && <StartFresh />}
+
       {mode === "upload" && (
         <div className="mt-6">
-          <p className="mb-4 text-muted">Your new resume replaces this one, and I&apos;ll look for fresh jobs that fit it.</p>
+          <p className="mb-4 text-muted">
+            Your new resume replaces this one. Then a few quick questions, and I&apos;ll look for fresh jobs that fit it. Your list and
+            follow-ups stay.
+          </p>
           <CvIngest />
           <button onClick={() => setMode("view")} className="mt-4 text-sm text-muted underline-offset-2 hover:underline">Cancel</button>
         </div>

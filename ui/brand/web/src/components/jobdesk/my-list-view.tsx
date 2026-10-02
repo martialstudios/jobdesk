@@ -189,6 +189,11 @@ export function MyListView() {
             {open.length ? `${open.length} job${open.length === 1 ? "" : "s"} ready to apply to.` : "You've applied to everything on your list. 🎉"}{" "}
             {open.length > 0 && "Check some to work on just those, or leave them all unchecked for all."}
           </p>
+          {done.length > 0 && (
+            <Link href="/follow-ups" className="mt-1 inline-flex items-center gap-1 text-sm text-brand underline-offset-2 hover:underline">
+              {done.length} applied · track and follow up on {done.length === 1 ? "it" : "them"} <ArrowRight className="size-3.5" />
+            </Link>
+          )}
 
           {open.length > 0 && (
             <div className="mt-6 flex flex-wrap gap-2.5">
@@ -264,11 +269,21 @@ export function MyListView() {
                         See how you fit <ArrowRight className="size-3.5" />
                       </Link>
                     )}
+                    {applied && (
+                      <Link href="/follow-ups" className="ml-3 mt-1.5 inline-flex items-center gap-1 text-sm text-brand underline-offset-2 hover:underline">
+                        Follow up <ArrowRight className="size-3.5" />
+                      </Link>
+                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {!applied && (
                       <button onClick={() => openForm(i)} title="Apply to this one" className="rounded-md p-1.5 text-faint hover:text-brand">
                         <Send className="size-4" />
+                      </button>
+                    )}
+                    {!applied && (
+                      <button onClick={() => void setStatus(i.url, "applied")} title="I applied to this (on their site)" className="rounded-md p-1.5 text-faint hover:text-emerald-600">
+                        <Check className="size-4" />
                       </button>
                     )}
                     <a href={i.url} target="_blank" rel="noreferrer" title="Open the job posting" className="rounded-md p-1.5 text-faint hover:text-foreground">

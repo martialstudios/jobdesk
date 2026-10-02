@@ -12,6 +12,10 @@ export type ListItem = {
   addedAt: number;
   status: "saved" | "applied" | "skipped";
   appliedAt?: number;
+  followUps?: number[];
+  outcome?: "waiting" | "interview" | "offer" | "rejected";
+  nextAt?: number;
+  notes?: string;
   n?: string;
   score?: number | null;
   tailored?: boolean;
@@ -58,9 +62,16 @@ export function useList(pollMs = 0) {
     const next = await post({ url, status });
     if (next) setItems(next);
   }, []);
+  const update = useCallback(
+    async (url: string, patch: { followedUp?: boolean; outcome?: ListItem["outcome"]; nextAt?: number | null; notes?: string; status?: ListItem["status"] }) => {
+      const next = await post({ url, ...patch });
+      if (next) setItems(next);
+    },
+    [],
+  );
   const remove = useCallback(async (url: string) => {
     const next = await post({ url, remove: true });
     if (next) setItems(next);
   }, []);
-  return { items, loaded, refresh, add, setStatus, remove };
+  return { items, loaded, refresh, add, setStatus, update, remove };
 }

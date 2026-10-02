@@ -69,9 +69,19 @@ function cacheFile(url: string) {
   return path.join(/* turbopackIgnore: true */ careerOpsRoot(), ".career-ops-web", "jobdesk-synopsis", `${id}.json`);
 }
 
+function resumeChangedAt(): number {
+  try {
+    return fs.statSync(path.join(/* turbopackIgnore: true */ careerOpsRoot(), "cv.md")).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 export function readCached(url: string): { result: SynopsisResult } | undefined {
   try {
     const d = JSON.parse(fs.readFileSync(cacheFile(url), "utf8"));
+    // The fit line is about their resume: a newer resume, a new read.
+    if (d.result !== null && resumeChangedAt() > Date.parse(d.at)) return undefined;
     // An unreadable posting is retried after a day; a summary is kept.
     if (d.result === null && Date.now() - Date.parse(d.at) > 86_400_000) return undefined;
     return { result: d.result === null ? null : cleanSynopsis(d.result) };
@@ -156,6 +166,17 @@ export function synopsisPrompt(jobs: { job: SynopsisJob; posting: string }[]): s
       "",
     ]),
   ].join("\n");
+}
+
+/** One quick answer from the small model, no thinking (follow-up emails too). */
+export async function quick(prompt: string, timeoutMs = 90_000): Promise<string> {
+  const cli = resolveCli("claude");
+  if (!cli) return "";
+  return run(cli.binPath, ["-p", prompt, "--output-format", "text", "--model", MODEL], {
+    cwd: os.tmpdir(),
+    timeoutMs,
+    env: { ...process.env, MAX_THINKING_TOKENS: "0" },
+  });
 }
 
 /** Summaries for a few jobs: cached ones straight away, the rest in one model call. */
