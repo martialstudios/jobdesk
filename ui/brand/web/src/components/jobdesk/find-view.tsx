@@ -148,11 +148,21 @@ function ago(date: string): string {
 }
 
 const bandRank = (o: DiscoveredOffer) => (o.fit?.band === "strong" ? 0 : o.fit?.band === "related" ? 1 : o.fit ? 2 : 1);
+// With a dream job (the welcome page's first step), jobs titled like the dream
+// come first, then the ways in it suggested, then the rest.
+type Dream = { dream: string[]; roles: string[] };
+const titled = (title: string, names: string[]) => {
+  const t = title.toLowerCase();
+  return names.some((n) => n && t.includes(n.toLowerCase()));
+};
+const dreamRank = (o: DiscoveredOffer, d: Dream | null) =>
+  !d ? 0 : titled(o.title || "", d.dream) ? 0 : titled(o.title || "", d.roles) ? 1 : 2;
 
 export function FindView({ seed }: { seed: ExploreFilters }) {
   const ex = useExplore();
   const { items: list, add } = useList();
   const [me, setMe] = useState<{ hasCv: boolean; location: string; answered: boolean } | null>(null);
+  const [dream, setDream] = useState<Dream | null>(null);
   const [stored, setStored] = useState<DiscoveredOffer[]>([]);
   const [opened, setOpened] = useState<Set<string>>(new Set());
   const [area, setAreaState] = useState<Area>(DEFAULT_AREA);
@@ -166,7 +176,11 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
   useEffect(() => {
     fetch("/api/jobdesk/me")
       .then((r) => r.json())
-      .then((d) => setMe({ hasCv: !!d.hasCv, location: String(d.location || ""), answered: !!d.answered }))
+      .then((d) => {
+        setMe({ hasCv: !!d.hasCv, location: String(d.location || ""), answered: !!d.answered });
+        const plan = d.goal?.plan;
+        if (plan) setDream({ dream: Array.isArray(plan.dream) ? plan.dream : [], roles: Array.isArray(plan.roles) ? plan.roles : [] });
+      })
       .catch(() => setMe({ hasCv: true, location: "", answered: true }));
     setStored(readStored<{ offers: DiscoveredOffer[] }>(RESULTS_KEY)?.offers ?? []);
     setAreaState({ ...DEFAULT_AREA, ...(readStored<Area>(AREA_KEY) ?? {}) });
@@ -217,9 +231,12 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
   const sorted = useMemo(
     () =>
       [...offers].sort(
-        (a, b) => bandRank(a) - bandRank(b) || (b.fit?.score ?? 0) - (a.fit?.score ?? 0) || (b.postedAt || "").localeCompare(a.postedAt || ""),
+        (a, b) =>
+          dreamRank(a, dream) + bandRank(a) - (dreamRank(b, dream) + bandRank(b)) ||
+          (b.fit?.score ?? 0) - (a.fit?.score ?? 0) ||
+          (b.postedAt || "").localeCompare(a.postedAt || ""),
       ),
-    [offers],
+    [offers, dream],
   );
   // Where each job is (/api/jobdesk/where): asked once per location.
   const locKey = useMemo(() => Array.from(new Set(offers.map((o) => o.location || ""))).sort().join("\n"), [offers]);

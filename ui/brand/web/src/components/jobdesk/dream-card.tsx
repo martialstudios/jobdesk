@@ -24,7 +24,7 @@ async function post(body: object) {
   return d;
 }
 
-export function DreamCard({ goal, onPlan }: { goal: DreamGoal | null; onPlan: (plan: DreamPlan | null) => void }) {
+export function DreamCard({ goal, onPlan, big = false }: { goal: DreamGoal | null; onPlan: (plan: DreamPlan | null) => void; big?: boolean }) {
   const [dream, setDream] = useState(goal?.dream || "");
   const [stage, setStage] = useState<Stage>(goal ? { kind: "plan", plan: goal.plan } : { kind: "idle" });
   const [picked, setPicked] = useState<Record<number, string[]>>({});
@@ -77,15 +77,17 @@ export function DreamCard({ goal, onPlan }: { goal: DreamGoal | null; onPlan: (p
   return (
     <section className="mt-8 rounded-2xl border border-brand/30 bg-brand/5 p-5">
       <h2 className="flex items-center gap-2 font-medium text-foreground">
-        <Sparkles className="size-4 text-brand" /> Dreaming of something different?
+        <Sparkles className="size-4 text-brand" /> {big ? "Your dream job" : "Dreaming of something different?"}
       </h2>
 
       {stage.kind === "idle" && (
         <>
-          <p className="mt-1 text-sm text-muted">
-            Your resume doesn&apos;t have to show it yet. Tell me the job you&apos;d love, and I&apos;ll work out the jobs that get you there.
-          </p>
-          <textarea value={dream} onChange={(e) => setDream(e.target.value)} rows={2}
+          {!big && (
+            <p className="mt-1 text-sm text-muted">
+              Your resume doesn&apos;t have to show it yet. Tell me the job you&apos;d love, and I&apos;ll work out the jobs that get you there.
+            </p>
+          )}
+          <textarea value={dream} onChange={(e) => setDream(e.target.value)} rows={big ? 3 : 2} autoFocus={big}
             placeholder="Like: working in book publishing, or designing apps" className={`${box} mt-3 resize-none`} />
           <button onClick={() => void start()} disabled={!dream.trim()}
             className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground hover:bg-brand-200 disabled:opacity-50">
@@ -137,7 +139,9 @@ export function DreamCard({ goal, onPlan }: { goal: DreamGoal | null; onPlan: (p
         <div className="mt-2">
           {stage.plan.path && <p className="text-foreground">{stage.plan.path}</p>}
           <p className="mt-3 text-sm text-muted">
-            I&apos;ve put the jobs that lead there under &ldquo;What kinds of jobs?&rdquo; below. Add or remove any.
+            {big
+              ? "Next, I'll show you the jobs that lead there, and you can add or remove any."
+              : <>I&apos;ve put the jobs that lead there under &ldquo;What kinds of jobs?&rdquo; below. Add or remove any.</>}
           </p>
           {stage.plan.carryOver.length > 0 && (
             <>

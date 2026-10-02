@@ -96,12 +96,16 @@ function cacheFile(url: string) {
   return path.join(/* turbopackIgnore: true */ careerOpsRoot(), ".career-ops-web", "jobdesk-synopsis", `${id}.json`);
 }
 
+// The resume or the dream job (its answers count toward fit) last changed.
 function resumeChangedAt(): number {
-  try {
-    return fs.statSync(path.join(/* turbopackIgnore: true */ careerOpsRoot(), "cv.md")).mtimeMs;
-  } catch {
-    return 0;
-  }
+  const at = (rel: string) => {
+    try {
+      return fs.statSync(path.join(/* turbopackIgnore: true */ careerOpsRoot(), rel)).mtimeMs;
+    } catch {
+      return 0;
+    }
+  };
+  return Math.max(at("cv.md"), at(".career-ops-web/jobdesk-goal.json"));
 }
 
 export function readCached(url: string): { result: SynopsisResult } | undefined {
@@ -160,7 +164,13 @@ function about(): string {
   let goal = "";
   try {
     const g = JSON.parse(fs.readFileSync(path.join(/* turbopackIgnore: true */ root, ".career-ops-web", "jobdesk-goal.json"), "utf8"));
-    goal = String(g?.plan?.profile || "");
+    // Their dream in their own words and their survey answers, so "fit" is
+    // judged against where they want to go, not only the resume.
+    const said = [g?.dream && `Their dream job, in their words: ${g.dream}`]
+      .concat(Array.isArray(g?.answers) ? g.answers.map((x: { q?: string; a?: string }) => x?.q && x?.a && `${x.q} ${x.a}`) : [])
+      .filter(Boolean)
+      .join("\n");
+    goal = [String(g?.plan?.profile || ""), said].filter(Boolean).join("\n");
   } catch {
     goal = "";
   }
