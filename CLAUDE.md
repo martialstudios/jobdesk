@@ -379,7 +379,11 @@ it lives only on the owner's Mac.
   - **A picture under the menu** (`BRAND_ART` in the brand file, copied into
     the build only; `brands/` is git-ignored apart from the example). A
     hand-drawn witch-on-a-broom SVG was tried and taken out (owner: "looks
-    terrible"); the owner may add their own picture there instead.
+    terrible"); the owner may add their own picture there instead. Asal's: the owner's ink
+    drawing of Kiki, colored and with the paper made transparent by
+    `brands/asal-kiki-color.py` (git-ignored with the picture); shown small
+    (170 px high) on the app's own background, with a faint light edge in
+    dark mode so the black ink stays visible.
   - **In-app updates** (2026-10-02; `macos/updater.mjs`, `tools/publish-update.sh`,
     `/api/jobdesk/update`, `update-notice.tsx`). Owner: "when I push a new
     change she can update from her app with an update available notice".
