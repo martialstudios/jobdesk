@@ -128,7 +128,7 @@ def main():
     # The optional theme's drawings (components/howl): they render nothing
     # unless the brand file sets BRAND_THEME.
     edit(web, "src/components/app-shell.tsx", '      <div className="flex min-h-screen">\n',
-         '      <HowlStyles />\n      <HowlSky />\n      <div className="flex min-h-screen">\n')
+         '      <HowlStyles />\n      <HowlSky />\n      <BrandArt />\n      <div className="flex min-h-screen">\n')
     edit(web, "src/components/app-shell.tsx", '<main className="flex-1 overflow-x-hidden">',
          '<main className="relative z-[1] flex-1 overflow-x-hidden">')
     edit(web, "src/components/app-shell.tsx", "              </div>\n            </div>\n          </div>\n        </aside>",
@@ -137,8 +137,6 @@ def main():
          'import { ThemeToggle } from "@/components/theme-toggle";',
          'import { ThemeToggle } from "@/components/theme-toggle";\nimport { HowlMeadow, HowlSky, HowlStyles } from "@/components/howl/decor";\n'
          'import { BrandArt } from "@/components/jobdesk/brand-art";')
-    # Under the menu: their picture, if the brand file names one (BRAND_ART).
-    edit(web, "src/components/app-shell.tsx", "          </nav>\n", "          </nav>\n          <BrandArt />\n")
     # career-ops's first-score popup leads with the raw grade; the job page
     # leads with strengths instead.
     edit(web, "src/components/app-shell.tsx", "        <FirstScoreView />\n", "")
