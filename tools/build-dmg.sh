@@ -30,7 +30,7 @@
 #                    it, their folder's name (see brands/example.env; needs python3
 #                    with Pillow for the picture guide)
 #
-# Runs on macOS (it needs osacompile, codesign and hdiutil) with network access.
+# Runs on macOS (it needs swiftc, lipo, codesign and hdiutil) with network access.
 
 set -u
 set -o pipefail
@@ -77,7 +77,7 @@ die() { printf 'build-dmg: %s\n' "$*" >&2; exit 1; }
 sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
 
 [ "$(uname -s)" = Darwin ] || die "Build JobDesk.dmg on a Mac."
-for tool in curl git tar hdiutil osacompile codesign plutil security shasum; do
+for tool in curl git tar hdiutil swiftc lipo codesign plutil security shasum; do
   command -v "$tool" >/dev/null 2>&1 || die "'$tool' is missing."
 done
 if [ "$(sysctl -in hw.optional.arm64 2>/dev/null)" = 1 ]; then HOST=arm64; else HOST=x64; fi
@@ -292,10 +292,31 @@ fi
 # ── the app ────────────────────────────────────────────────────────────────
 say "$APP_NAME.app"
 APP="$WORK/dmg/$APP_NAME.app"
-# The applet's windows and dialogs say the app's name.
-applet_src=$(cat "$ROOT/macos/JobDeskDMG.applescript")
-printf '%s\n' "${applet_src//JobDesk/$APP_NAME}" > "$WORK/applet.applescript"
-run osacompile -s -o "$APP" "$WORK/applet.applescript"
+# A Mac app with its own window (macos/app/main.swift), for both kinds of Mac.
+# Its windows and dialogs take the app's name from Info.plist.
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+for t in arm64 x86_64; do
+  run swiftc -O -target "$t-apple-macos11.3" -o "$WORK/app-$t" "$ROOT/macos/app/main.swift"
+done
+run lipo -create -output "$APP/Contents/MacOS/JobDesk" "$WORK/app-arm64" "$WORK/app-x86_64"
+cat > "$APP/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key><string>JobDesk</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleIdentifier</key><string>com.martialstudios.jobdesk</string>
+  <key>CFBundleName</key><string>JobDesk</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>11.3</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+</dict>
+</plist>
+PLIST
 # install.sh's brand_app: icon, name, bundle id, version.
 (
   # shellcheck source=install.sh

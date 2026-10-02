@@ -733,6 +733,9 @@ main() {
       [ "${1:-}" = "--from-app" ] && shift
       cmd_open "$@" ;;
     start) cmd_start ;;
+    # For the desktop app: start JobDesk if needed and print the address its
+    # window loads (what `open` would send the browser to).
+    serve-url) cmd_start >/dev/null || exit 1; open_target "$(running_port)" "${1:-}"; printf '\n' ;;
     stop) [ "${1:-}" = "--quiet" ] && QUIET=1; cmd_stop ;;
     restart) cmd_stop >/dev/null; cmd_start ;;
     status) [ "${1:-}" = "--quiet" ] && QUIET=1; cmd_status ;;

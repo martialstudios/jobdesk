@@ -63,8 +63,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
-      - name: the applet compiles
-        run: osacompile -s -o "$RUNNER_TEMP/JobDesk.app" macos/JobDeskDMG.applescript
+      - name: the Mac app compiles
+        run: swiftc -typecheck macos/app/main.swift
       # Builds a test DMG (fake key, throwaway home), then sets it up and runs it.
       - name: build, set up, run, uninstall
         run: /bin/bash tests/dmg-e2e.sh
