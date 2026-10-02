@@ -9,13 +9,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Check, ExternalLink, Loader2, Send, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { ArrowRight, Check, Download, ExternalLink, Loader2, Send, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { instrumentSerif } from "@/lib/fonts";
 import { useJobs } from "@/components/jobs/job-store";
 import { useApply } from "@/components/apply/apply-provider";
 import { useList, type ListItem } from "./use-list";
 import { queueTasks, useTasks, clearFailed } from "./tasks";
 import { tierOf } from "./match";
+import { canAutofill } from "./apply-kind";
 
 const APPLY_KEY = "jobdesk:applying";
 
@@ -103,26 +104,61 @@ export function MyListView() {
         </p>
         <h1 className={`${instrumentSerif.className} mt-3 text-4xl text-landing`}>{current.title}</h1>
         <p className="mt-1 text-muted">{[current.company, current.location].filter(Boolean).join(" · ")}</p>
-        <ol className="mt-8 space-y-3 text-foreground">
-          <li>
-            <strong>1.</strong> Press <strong>Open the application</strong>. I&apos;ll open the real form and fill it in from your resume
-            {current.tailored ? " (with the resume tailored for this job)" : ""}.
-          </li>
-          <li>
-            <strong>2.</strong> Check every answer, fix anything that&apos;s off, and press <strong>Submit</strong> on their site. I never submit for you.
-          </li>
-          <li>
-            <strong>3.</strong> Come back here and tell me it&apos;s done.
-          </li>
-        </ol>
-        <div className="mt-8 flex flex-wrap gap-2.5">
-          <button onClick={() => openForm(current)} className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 font-medium text-brand-foreground hover:bg-brand-200">
-            <Send className="size-4" /> Open the application
-          </button>
-          <a href={current.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2.5 text-foreground">
-            <ExternalLink className="size-4" /> See the posting
-          </a>
-        </div>
+        {canAutofill(current.url, current.ats) ? (
+          <>
+            <ol className="mt-8 space-y-3 text-foreground">
+              <li>
+                <strong>1.</strong> Press <strong>Open the application</strong>. I&apos;ll open the real form and fill it in from your resume
+                {current.tailored ? " (with the resume tailored for this job)" : ""}.
+              </li>
+              <li>
+                <strong>2.</strong> Check every answer, fix anything that&apos;s off, and press <strong>Submit</strong> on their site. I never submit for you.
+              </li>
+              <li>
+                <strong>3.</strong> Come back here and tell me it&apos;s done.
+              </li>
+            </ol>
+            <div className="mt-8 flex flex-wrap gap-2.5">
+              <button onClick={() => openForm(current)} className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 font-medium text-brand-foreground hover:bg-brand-200">
+                <Send className="size-4" /> Open the application
+              </button>
+              <a href={current.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2.5 text-foreground">
+                <ExternalLink className="size-4" /> See the posting
+              </a>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mt-6 rounded-xl bg-surface p-4 text-foreground">
+              This company takes applications on its own site, which asks you to make an account first, so I can&apos;t fill
+              this one in for you. Here&apos;s the quickest way:
+            </p>
+            <ol className="mt-6 space-y-3 text-foreground">
+              <li>
+                <strong>1.</strong> Save your resume as a PDF{current.tailored ? " (the one tailored for this job)" : ""}.
+              </li>
+              <li>
+                <strong>2.</strong> Open the application on their site, make an account if it asks, and upload the PDF. Most sites then fill in the rest from it.
+              </li>
+              <li>
+                <strong>3.</strong> Check it, press <strong>Submit</strong>, and come back here to tell me it&apos;s done.
+              </li>
+            </ol>
+            <div className="mt-8 flex flex-wrap gap-2.5">
+              <a
+                href={current.tailored && current.n ? `/api/cv-pdf?n=${encodeURIComponent(current.n)}&company=${encodeURIComponent(current.company)}` : "/api/jobdesk/resume-pdf"}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2.5 text-foreground"
+              >
+                <Download className="size-4" /> My resume (PDF)
+              </a>
+              <a href={current.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 font-medium text-brand-foreground hover:bg-brand-200">
+                <ExternalLink className="size-4" /> Apply on their site
+              </a>
+            </div>
+          </>
+        )}
         <div className="mt-10 flex flex-wrap items-center gap-2.5 border-t border-border pt-6">
           <button onClick={() => void next(true)} className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 font-medium text-white hover:bg-emerald-700">
             <Check className="size-4" /> I submitted it, next

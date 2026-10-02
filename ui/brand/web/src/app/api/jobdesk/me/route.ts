@@ -8,6 +8,8 @@ import { readGoal } from "@/lib/jobdesk/dream";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const same = (a: unknown, b: unknown) => a !== undefined && JSON.stringify(a) === JSON.stringify(b);
+
 export async function GET() {
   const root = careerOpsRoot();
   let profile: Record<string, any> = {};
@@ -41,7 +43,10 @@ export async function GET() {
     hasCv: fs.existsSync(path.join(/* turbopackIgnore: true */ root, "cv.md")),
     name: c.full_name || "",
     location: c.location && c.location !== example.candidate?.location ? c.location : "",
-    roles: profile.target_roles?.primary || [],
+    // The example file's roles ("Senior AI Engineer") aren't theirs.
+    roles: same(profile.target_roles?.primary, example.target_roles?.primary) ? [] : profile.target_roles?.primary || [],
     goal: readGoal(),
+    // Set by /api/jobdesk/personalize, which the questions page calls.
+    answered: fs.existsSync(path.join(/* turbopackIgnore: true */ root, ".career-ops-web", "jobdesk-answered")),
   });
 }
