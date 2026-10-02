@@ -368,6 +368,13 @@ it lives only on the owner's Mac.
     older than the resume are read again (their fit line is about it). Only
     the top 24 jobs are summarized automatically; the rest on "Quick read"
     (the owner's install had summarized 1,036 jobs).
+  - **First application** (`cheer.tsx`, `BRAND_CHEER`): the very first job
+    marked sent (none applied before, per My list) gets a confetti
+    celebration with the builder's line ("Ryan says, You got this!" for Asal);
+    every later one a small "Sent! 🎉". Owner: once, not every time.
+  - **Apply needs Google Chrome** on her Mac (career-ops opens forms in the
+    system Chrome; the DMG ships only a headless Chromium). The error is now
+    plain words with where to get Chrome, instead of "npx playwright install".
   - **No example person in applications** (`lib/jobdesk/scrub.ts`). The
     owner's own install had 22 values still copied from career-ops's example
     profile (janesmith LinkedIn, a visa answer, $150K-200K, a fake headline)
