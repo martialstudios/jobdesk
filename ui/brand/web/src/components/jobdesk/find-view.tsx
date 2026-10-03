@@ -136,6 +136,7 @@ function QuickRead({ s, open, onToggle, onRead, company }: { s: SynopsisState; o
 // remote jobs in the US or not. Set on the questions page, changeable here.
 type Area = { miles: number; remote: boolean };
 const AREA_KEY = "jobdesk:area";
+const AUTO_KEY = "jobdesk:auto-only";
 const DEFAULT_AREA: Area = { miles: 25, remote: true };
 const RADII = [10, 25, 50, 100, 0];
 type Where = { us: boolean | null; remote: boolean; miles: number | null };
@@ -170,6 +171,9 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
   const [places, setPlaces] = useState<Record<string, Where>>({});
   const [showFar, setShowFar] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  // Only jobs whose form the app can fill and send (Greenhouse, Lever, Ashby).
+  const [autoOnly, setAutoOnly] = useState(false);
+  useEffect(() => setAutoOnly(readStored<boolean>(AUTO_KEY) === true), []);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState("");
   const started = useRef(false);
@@ -234,6 +238,7 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
       [...offers].sort(
         (a, b) =>
           dreamRank(a, dream) + bandRank(a) - (dreamRank(b, dream) + bandRank(b)) ||
+          Number(canAutofill(b.url, b.ats)) - Number(canAutofill(a.url, a.ats)) ||
           (b.fit?.score ?? 0) - (a.fit?.score ?? 0) ||
           (b.postedAt || "").localeCompare(a.postedAt || ""),
       ),
@@ -288,7 +293,9 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
     const w = placed(o);
     return w ? w.us !== false && !inArea(w) : false;
   });
-  const pool = showFar ? [...local, ...far] : local;
+  const auto = (o: DiscoveredOffer) => canAutofill(o.url, o.ats);
+  const pool = (showFar ? [...local, ...far] : local).filter((o) => !autoOnly || auto(o));
+  const notAuto = autoOnly ? (showFar ? [...local, ...far] : local).filter((o) => !auto(o)).length : 0;
   const main = pool.filter((o) => o.fit?.band !== "weak");
   const more = pool.filter((o) => o.fit?.band === "weak");
   const shown = showMore ? [...main, ...more] : main;
@@ -465,12 +472,25 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
                 <input type="checkbox" className="size-4 accent-[hsl(26_73%_51%)]" checked={area.remote} onChange={() => setArea({ ...area, remote: !area.remote })} />
                 Remote (US)
               </label>
+              <label className="ml-1 inline-flex cursor-pointer items-center gap-1.5" title="Only jobs whose application the app can fill in and send for you">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-[hsl(26_73%_51%)]"
+                  checked={autoOnly}
+                  onChange={() => {
+                    setAutoOnly(!autoOnly);
+                    store(AUTO_KEY, !autoOnly);
+                  }}
+                />
+                Only auto-apply jobs
+              </label>
             </div>
           </div>
           <p className="mt-2 text-xs text-faint">
             {ex.companiesScanned > 0 && ex.phase !== "idle" && `Checked ${ex.companiesScanned.toLocaleString()} companies' job boards this time${ex.companiesAvailable > ex.companiesScanned ? ` (of ${ex.companiesAvailable.toLocaleString()}; Search again checks a different batch)` : ""}. `}
             {abroad > 0 && `Left out ${abroad} outside the US. `}
-            {crowded > 0 && `Showing up to ${PER_COMPANY} jobs per company (${crowded} near-repeats hidden).`}
+            {crowded > 0 && `Showing up to ${PER_COMPANY} jobs per company (${crowded} near-repeats hidden). `}
+            {notAuto > 0 && `Hid ${notAuto} you'd apply to on the company's own site.`}
           </p>
           {sorted.length > 0 && local.length === 0 && !showFar && (
             <p className="mt-4 rounded-xl bg-surface p-4 text-sm text-foreground">
@@ -513,8 +533,8 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
                           </span>
                         )}
                         {canAutofill(o.url, o.ats) ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] text-brand-text" title="Apply can fill in this form for you">
-                            <Wand2 className="size-3" /> Easy apply
+                          <span className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] text-brand-text" title="The app can fill in and send this application for you">
+                            <Wand2 className="size-3" /> Auto-apply
                           </span>
                         ) : (
                           <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted" title="This company's form needs an account on their site">

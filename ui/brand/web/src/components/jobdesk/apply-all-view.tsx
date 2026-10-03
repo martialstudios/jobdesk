@@ -320,7 +320,13 @@ export function ApplyAllView() {
       )}
 
       {jobs.length > 0 && (
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+        <p className="mt-4 text-sm text-muted">
+          {jobs.filter((j) => j.stage !== "own").length} auto-apply
+          {jobs.some((j) => j.stage === "own") && ` · ${jobs.filter((j) => j.stage === "own").length} on their own site (Workday and similar need an account there, so you apply on their site)`}
+        </p>
+      )}
+      {jobs.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           {!confirmAll ? (
             <button
               onClick={() => setConfirmAll(true)}
