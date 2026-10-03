@@ -14,21 +14,10 @@ import { instrumentSerif } from "@/lib/fonts";
 import { useList, type ListItem } from "./use-list";
 import { BrandLogo, prettyCompany } from "./brand-logo";
 
-const DAY = 86_400_000;
-const WAIT_DAYS = 7;
-const MAX_FOLLOW_UPS = 2;
+import { AppliedTracker } from "./applied-tracker";
+import { DAY, planFor, type Plan } from "./plan";
 
-type Plan = { stage: "due" | "waiting" | "quiet" | "heard" | "closed"; due: number; last: number };
-
-export function planFor(i: ListItem, now = Date.now()): Plan {
-  const applied = i.appliedAt ?? i.addedAt;
-  const last = Math.max(applied, ...(i.followUps ?? []));
-  const due = i.nextAt ?? last + WAIT_DAYS * DAY;
-  if (i.outcome === "interview" || i.outcome === "offer") return { stage: "heard", due, last };
-  if (i.outcome === "rejected") return { stage: "closed", due, last };
-  if ((i.followUps?.length ?? 0) >= MAX_FOLLOW_UPS && now >= due) return { stage: "quiet", due, last };
-  return { stage: now >= due ? "due" : "waiting", due, last };
-}
+export { planFor };
 
 const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 function ago(t: number) {
@@ -354,6 +343,7 @@ export function FollowUpsView() {
     <div className="mx-auto max-w-3xl px-5 pb-24 pt-10 md:px-8">
       <h1 className={`${instrumentSerif.className} text-4xl text-landing md:text-5xl`}>Follow-ups</h1>
       <p className="mt-2 text-muted">Every job you&apos;ve applied to, and the right time to nudge them.</p>
+      {loaded && applied.length > 0 && <AppliedTracker items={items} link={false} />}
       {applied.length > 0 && (
         <div className="mt-5 inline-flex rounded-full border border-border p-1 text-sm">
           {([["next", "By next step"], ["all", `All applications (${applied.length})`]] as const).map(([k, label]) => (

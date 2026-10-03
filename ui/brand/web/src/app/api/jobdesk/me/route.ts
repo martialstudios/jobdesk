@@ -4,6 +4,7 @@ import path from "node:path";
 import * as yaml from "js-yaml";
 import { careerOpsRoot } from "@/lib/career-ops";
 import { readGoal } from "@/lib/jobdesk/dream";
+import { scrubExampleTitles } from "@/lib/jobdesk/portal-titles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +12,9 @@ export const dynamic = "force-dynamic";
 const same = (a: unknown, b: unknown) => a !== undefined && JSON.stringify(a) === JSON.stringify(b);
 
 export async function GET() {
+  // A brand-new install still has career-ops's example search (AI/ML titles in,
+  // "Junior"/"Intern" out): emptied until their own answers replace it.
+  scrubExampleTitles();
   const root = careerOpsRoot();
   let profile: Record<string, any> = {};
   try {

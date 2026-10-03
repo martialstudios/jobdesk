@@ -121,6 +121,12 @@ export function WelcomeView() {
           currency: Number.isFinite(min) || Number.isFinite(max) ? "USD" : undefined,
         }),
       });
+      // The same titles drive career-ops's own scan and the assistant.
+      void fetch("/api/jobdesk/titles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roles, skipSenior: skipSenior || !!plan }),
+      }).catch(() => {});
       // The rest of the profile, from the resume, in the background.
       const pay = Number.isFinite(min) || Number.isFinite(max)
         ? { min: Number.isFinite(min) ? min : undefined, max: Number.isFinite(max) ? max : undefined }

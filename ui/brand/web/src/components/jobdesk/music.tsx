@@ -1,9 +1,10 @@
 "use client";
 
-// JobDesk branded builds: a song of the builder's choosing (BRAND_MUSIC, an
-// audio file they own, copied into the build) plays once when a resume is
-// uploaded (the "start" of the JobdeskFun loading screen) and keeps going on
-// whatever page they're on. A file already cut
+// JobDesk branded builds: songs of the builder's choosing (audio files they
+// own, copied into the build). BRAND_MUSIC plays once when a resume is
+// uploaded (the "start" of the JobdeskFun loading screen); BRAND_MUSIC_SEARCH
+// plays once when the job search starts (its "resume"), taking over from the
+// first if it's still going. Each keeps going on whatever page they're on. A file already cut
 // to length plays as it is, its own fades and all; with BRAND_MUSIC_CLIP
 // (a part of a longer song) it fades in and out here. A small button stops it.
 // Renders nothing without one.
@@ -21,7 +22,7 @@ export function BrandMusic() {
   const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
-    if (!JOBDESK_MUSIC.src) return;
+    if (!JOBDESK_MUSIC.src && !JOBDESK_MUSIC.searchSrc) return;
     let frame = 0;
     let fadingOut = false;
     const start = JOBDESK_MUSIC.start;
@@ -44,11 +45,17 @@ export function BrandMusic() {
       a.volume = Math.max(0, Math.min(1, VOLUME * Math.max(0, Math.min(fin, fout))));
       frame = window.requestAnimationFrame(tick);
     };
-    const play = () => {
-      if (!audio.current) audio.current = new Audio(JOBDESK_MUSIC.src);
-      const a = audio.current;
-      // Already playing: let it carry on rather than start over.
-      if (!a.paused && !fadingOut) return;
+    const play = (src: string) => {
+      if (!src) return;
+      // Already playing this one: let it carry on rather than start over.
+      const cur = audio.current;
+      if (cur && cur.dataset.src === src && !cur.paused && !fadingOut) return;
+      cur?.pause();
+      if (!cur || cur.dataset.src !== src) {
+        audio.current = new Audio(src);
+        audio.current.dataset.src = src;
+      }
+      const a = audio.current!;
       window.cancelAnimationFrame(frame);
       fadingOut = false;
       a.volume = JOBDESK_MUSIC.end > 0 ? 0 : VOLUME;
@@ -62,7 +69,9 @@ export function BrandMusic() {
         .catch(() => setPlaying(false));
     };
     const onEvent = (e: Event) => {
-      if ((e as CustomEvent).detail === "start") play();
+      const what = (e as CustomEvent).detail;
+      if (what === "start") play(JOBDESK_MUSIC.src);
+      else if (what === "resume") play(JOBDESK_MUSIC.searchSrc);
     };
     const onStop = () => stopAll();
     window.addEventListener("jobdesk:fun", onEvent);

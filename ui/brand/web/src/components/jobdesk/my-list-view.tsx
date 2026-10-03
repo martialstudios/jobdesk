@@ -19,6 +19,7 @@ import { tierOf } from "./match";
 import { canAutofill } from "./apply-kind";
 import { CheerToast } from "./cheer";
 import { BrandLogo, prettyCompany } from "./brand-logo";
+import { AppliedTracker } from "./applied-tracker";
 
 const APPLY_KEY = "jobdesk:applying";
 
@@ -201,11 +202,7 @@ export function MyListView() {
             {open.length ? `${open.length} job${open.length === 1 ? "" : "s"} ready to apply to.` : "You've applied to everything on your list. 🎉"}{" "}
             {open.length > 0 && "Check some to work on just those, or leave them all unchecked for all."}
           </p>
-          {done.length > 0 && (
-            <Link href="/follow-ups" className="mt-1 inline-flex items-center gap-1 text-sm text-brand underline-offset-2 hover:underline">
-              {done.length} applied · track and follow up on {done.length === 1 ? "it" : "them"} <ArrowRight className="size-3.5" />
-            </Link>
-          )}
+          {done.length > 0 && <AppliedTracker items={items} />}
 
           {open.length > 0 && (
             <div className="mt-6 flex flex-wrap gap-2.5">
