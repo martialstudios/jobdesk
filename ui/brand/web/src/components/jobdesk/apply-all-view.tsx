@@ -250,7 +250,7 @@ export function ApplyAllView() {
           patch(j.url, { stage: "sent", note: d.message });
           void post("/api/apply/close", { sessionId: j.sessionId });
         } else if (d.reason === "code") {
-          patch(j.url, { stage: "code", note: d.message });
+          patch(j.url, { stage: "code", note: d.message, code: "" });
         } else {
           patch(j.url, { stage: "ready", note: [d.message, ...(d.errors || [])].join(" ") });
         }

@@ -70,6 +70,8 @@ export function ApproveSubmit() {
       });
       const d = (await r.json()) as Result;
       setResult(d);
+      // Asked for a code (again): an empty box for the new one.
+      if (d.reason === "code") setCode("");
       if (d.ok) {
         const first = !(listBefore.items || []).some((i: { status?: string }) => i.status === "applied");
         // Opened from a pasted link, it isn't on her list yet: add it, then mark it.

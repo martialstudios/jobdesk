@@ -128,6 +128,14 @@ export async function submitSession(id: string, opts: SubmitOptions = {}): Promi
       }, { thanks: THANKS.source, code: CODE_TEXT.source })
       .catch(() => ({ said: "", errs: [] as string[], askedCode: false }));
     if (state.said) return { ok: true, message: state.said };
+    // A code she pasted that the site turned down: ask for it again.
+    if (opts.code && state.errs.length) {
+      return {
+        ok: false,
+        reason: "code",
+        message: `That code didn't work (the site said: ${state.errs[0]}). Check the email, or ask the site for a new code, and paste it again.`,
+      };
+    }
     if (state.askedCode && !opts.code) {
       return {
         ok: false,
@@ -138,6 +146,9 @@ export async function submitSession(id: string, opts: SubmitOptions = {}): Promi
     if (state.errs.length) return { ok: false, reason: "errors", message: "The form wants a few things fixed before it will send.", errors: state.errs };
     const formLeft = await frame.locator("[data-co-field]").count().catch(() => 0);
     if (formLeft === 0) return { ok: true, message: "The form went away after Submit, which usually means it was sent." };
+  }
+  if (opts.code) {
+    return { ok: false, reason: "code", message: "The site didn't accept the code. Check the email, or ask the site for a new code, and paste it again." };
   }
   return { ok: false, reason: "unclear", message: "I pressed Submit but the page didn't clearly say it went through. Check the Chrome window; if it says thank you, press Mark applied." };
 }
