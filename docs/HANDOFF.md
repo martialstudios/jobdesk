@@ -60,8 +60,8 @@ codesign --force --deep -s - "$A"; open "$A"     # server URL is in $T/home/.job
 | Name everywhere, icon, DMG name | `tools/brand_web.py`, `tools/build-dmg.sh` | `BRAND_NAME`, `BRAND_VOLUME`, `BRAND_ICON` |
 | Native app window | `macos/app/main.swift` | — |
 | Resume box line ("Ryan says to put your damn resume here…") | `brand_web.py` (cv-ingest edit) | `BRAND_CV_PLACEHOLDER` |
-| Loading screen with lines + progress | `ui/brand/web/src/components/jobdesk-fun.tsx` | `BRAND_FUN_LINES`, `BRAND_FUN_REVEAL*`, `BRAND_FUN_DOTS` |
-| Song on that loading screen (once per upload, stop button) | `components/jobdesk/music.tsx` | `BRAND_MUSIC` (+ optional `_CLIP`, `_TITLE`) |
+| Loading screen with lines + progress (resume read, then the first search; during the search it also shows the castle-crossing-the-meadow scene, which it would otherwise cover) | `ui/brand/web/src/components/jobdesk-fun.tsx`, `components/howl/scene.tsx` | `BRAND_FUN_LINES`, `BRAND_FUN_REVEAL*`, `BRAND_FUN_DOTS` |
+| Songs: one on the upload loading screen, another when the job search starts (stop button) | `components/jobdesk/music.tsx` | `BRAND_MUSIC` (+ `_CLIP`, `_TITLE`), `BRAND_MUSIC_SEARCH` |
 | Kiki floating top-right; flies across the loading screen with wind gusts, glides back | `components/jobdesk/brand-art.tsx` | `BRAND_ART` |
 | Howl's-castle theme (sky, meadow, flame, track) | `components/howl/*` | `BRAND_THEME=howl` |
 | Step 1: "What job would you love?" (survey → plan) | `jobdesk/welcome-view.tsx`, `dream-card.tsx`, `api/jobdesk/dream`, `lib/jobdesk/dream.ts` | — |
@@ -70,7 +70,9 @@ codesign --force --deep -s - "$A"; open "$A"     # server URL is in $T/home/.job
 | Quick read per job (synopsis, company, perks, fit vs. dream) | `use-synopses.ts`, `api/jobdesk/synopsis`, `lib/jobdesk/synopsis.ts` (Haiku, cached in `.career-ops-web/jobdesk-synopsis`) | — |
 | My list (apply, score, tailor), job page | `my-list-view.tsx`, `job-view.tsx`, `lib/jobdesk/list.ts` | — |
 | "Ryan says, You got this!" (first application only, with a celebration) | `cheer.tsx` | `BRAND_CHEER` |
-| Follow-ups (by next step / all applications, email drafts, outcomes, notes) | `follow-ups-view.tsx`, `api/jobdesk/followup-email` | — |
+| Follow-ups (by next step / all applications, email drafts, outcomes, notes) | `follow-ups-view.tsx`, `plan.ts`, `api/jobdesk/followup-email` | — |
+| Tracker tiles (applied, waiting, follow up now, interviews, offers) on My list + Follow-ups | `applied-tracker.tsx` | — |
+| Blank slate: career-ops's example search (AI/ML titles in, "Junior"/"Intern" out) is emptied on a new install; her saved titles become the scan filter | `lib/jobdesk/portal-titles.ts`, `api/jobdesk/titles`, `api/jobdesk/me` | — |
 | My resume (edit, ask for a change, replace, PDF, Start fresh → dated backup, never deletes) | `resume-view.tsx`, `lib/jobdesk/reset.ts` | — |
 | Assistant "Asal’s Assistant (Bitch)" + greeting (old saved chats get the new greeting) | `brand_web.py` (assistant-console edits) | `BRAND_ASSISTANT`, `BRAND_ASSISTANT_HELLO` |
 | Update notice | `update-notice.tsx`, `api/jobdesk/update`, `macos/updater.mjs` | `BRAND_UPDATE_REPO`, `BRAND_UPDATE_CHANNEL` |
@@ -83,15 +85,26 @@ career-ops file and fails the build if an edit's anchor is missing.
 ## Asset provenance (keep it this way)
 
 - **Kiki** (`brands/asal-kiki.png`): the owner's own ink drawing, colored.
-- **Song** (`brands/asal-music.m4a`): cut from the owner's **iTunes purchase**
-  (Joe Hisaishi, "Merry-Go-Round of Life", *FREEDOM PIANO STORIES 4*),
-  4:08–4:45 with the fade baked in. Private use, never committed.
+- **Songs** (`brands/asal-music.m4a`, `brands/asal-music-search.m4a`): cut
+  from the owner's **iTunes purchase** (Joe Hisaishi, "Merry-Go-Round of
+  Life", *FREEDOM PIANO STORIES 4*): 4:08–4:45 for the upload screen and
+  0:49–1:29 for the search, each with a 4 s fade baked in. Private use, never
+  committed.
 - **Icon**: original art (`brands/asal-icon.svg`).
 - **Declined, on purpose:** YouTube rips of a cover (video, mp3, a re-cut WAV
   from Discord, all the same recording) and Totoro images (film frames, fan
   art). Don't add ripped audio or copyrighted characters' images to a build;
   original drawings or the owner's own work only. Unused original drawings
   from that discussion: `brands/asal-cat.png`, `brands/asal-spirit.png`.
+
+## What a new install contains (verified 2026-10-02)
+
+Nothing from the owner's own sessions: the DMG carries career-ops's published
+code, JobDesk, the runtime and the brand settings. A fresh install has no
+resume, profile, name, location, job titles, list, follow-ups or dream plan;
+the one inherited default (career-ops's example search filter) is emptied.
+"Start fresh" on My resume returns to this state (old data moves to a dated
+backup folder).
 
 ## Open items
 

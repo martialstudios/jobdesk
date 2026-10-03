@@ -405,7 +405,18 @@ def main():
     # A song of their choosing while the resume is read (an audio file they own,
     # copied into the build like the picture): BRAND_MUSIC_CLIP "start-end" in
     # seconds picks the part to play; it fades out at the end.
-    music = {"src": "", "start": 0, "end": 0, "title": os.environ.get("BRAND_MUSIC_TITLE", "").strip()}
+    music = {"src": "", "searchSrc": "", "start": 0, "end": 0, "title": os.environ.get("BRAND_MUSIC_TITLE", "").strip()}
+    # BRAND_MUSIC_SEARCH: a second song, for when the job search starts.
+    search_song = os.environ.get("BRAND_MUSIC_SEARCH", "").strip()
+    if search_song:
+        src = search_song if os.path.isabs(search_song) else os.path.join(ROOT, search_song)
+        ext = os.path.splitext(src)[1].lower()
+        if ext not in (".m4a", ".mp3", ".aac", ".wav"):
+            die(f"BRAND_MUSIC_SEARCH {search_song!r}: use a .m4a, .mp3, .aac or .wav file")
+        if not os.path.isfile(src):
+            die(f"BRAND_MUSIC_SEARCH {search_song!r}: no such file")
+        shutil.copyfile(src, os.path.join(web, "public", "jobdesk-music-search" + ext))
+        music["searchSrc"] = "/jobdesk-music-search" + ext
     song = os.environ.get("BRAND_MUSIC", "").strip()
     if song:
         src = song if os.path.isabs(song) else os.path.join(ROOT, song)
@@ -431,7 +442,7 @@ def main():
         f.write("export const JOBDESK_THEME: string = " + json.dumps(theme) + ";\n")
         f.write("export const JOBDESK_CHEER: string = " + json.dumps(cheer, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_ART: string = " + json.dumps(art_url) + ";\n")
-        f.write("export const JOBDESK_MUSIC: { src: string; start: number; end: number; title: string } = "
+        f.write("export const JOBDESK_MUSIC: { src: string; searchSrc: string; start: number; end: number; title: string } = "
                 + json.dumps(music, ensure_ascii=False) + ";\n")
         f.write("export const JOBDESK_FUN: { lines: [string, number | null][]; reveal: string; "
                 "revealSeconds: number; dots: string[] } = " + json.dumps(fun, ensure_ascii=False) + ";\n")
