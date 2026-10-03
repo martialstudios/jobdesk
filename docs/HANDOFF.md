@@ -60,7 +60,7 @@ codesign --force --deep -s - "$A"; open "$A"     # server URL is in $T/home/.job
 | Name everywhere, icon, DMG name | `tools/brand_web.py`, `tools/build-dmg.sh` | `BRAND_NAME`, `BRAND_VOLUME`, `BRAND_ICON` |
 | Native app window | `macos/app/main.swift` | — |
 | Resume box line ("Ryan says to put your damn resume here…") | `brand_web.py` (cv-ingest edit) | `BRAND_CV_PLACEHOLDER` |
-| Loading screen with lines + progress | `ui/brand/web/src/components/jobdesk-fun.tsx` | `BRAND_FUN_LINES`, `BRAND_FUN_REVEAL*`, `BRAND_FUN_DOTS` |
+| Loading screen with lines + progress (resume read, then the first search; during the search it also shows the castle-crossing-the-meadow scene, which it would otherwise cover) | `ui/brand/web/src/components/jobdesk-fun.tsx`, `components/howl/scene.tsx` | `BRAND_FUN_LINES`, `BRAND_FUN_REVEAL*`, `BRAND_FUN_DOTS` |
 | Songs: one on the upload loading screen, another when the job search starts (stop button) | `components/jobdesk/music.tsx` | `BRAND_MUSIC` (+ `_CLIP`, `_TITLE`), `BRAND_MUSIC_SEARCH` |
 | Kiki floating top-right; flies across the loading screen with wind gusts, glides back | `components/jobdesk/brand-art.tsx` | `BRAND_ART` |
 | Howl's-castle theme (sky, meadow, flame, track) | `components/howl/*` | `BRAND_THEME=howl` |

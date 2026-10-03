@@ -17,7 +17,8 @@
 import { useEffect, useState } from "react";
 import { instrumentSerif } from "@/lib/fonts";
 import { JOBDESK_FUN } from "@/lib/jobdesk-brand";
-import { HowlFlame, HowlTrack } from "@/components/howl/decor";
+import { HowlFlame, HowlTrack, howlOn } from "@/components/howl/decor";
+import { HowlSearchScene } from "@/components/howl/scene";
 
 const SAFETY_MS = 6 * 60 * 1000;
 // The bar: reading the CV fills up to READ_SHARE (an estimate, easing in);
@@ -32,6 +33,10 @@ export function JobdeskFun() {
   const [pct, setPct] = useState(0);
   const [found, setFound] = useState(0);
   const [dots, setDots] = useState(1);
+  // Once the job search is running: its scene (the castle crossing the meadow)
+  // shows here too, since this screen covers the page that has it.
+  const [searching, setSearching] = useState(false);
+  const [scanPct, setScanPct] = useState(0);
 
   useEffect(() => {
     let lineTimer = 0;
@@ -58,6 +63,7 @@ export function JobdeskFun() {
     const hide = () => {
       clearAll();
       startedAt = 0;
+      setSearching(false);
       revealing = false;
       finishWanted = false;
       setText(null);
@@ -97,6 +103,8 @@ export function JobdeskFun() {
       scanFraction = -1;
       setPct(0);
       setFound(0);
+      setSearching(false);
+      setScanPct(0);
       show(0);
       safety = window.setTimeout(hide, SAFETY_MS);
       ticker = window.setInterval(tick, 450);
@@ -121,6 +129,8 @@ export function JobdeskFun() {
     const progress = (p: Progress) => {
       if (!startedAt) return;
       scanFraction = Math.max(scanFraction, Math.min(1, p.fraction || 0));
+      setSearching(true);
+      setScanPct(scanFraction);
       bump(READ_SHARE + (98 - READ_SHARE) * scanFraction);
       setFound((f) => Math.max(f, p.found || 0));
     };
@@ -139,7 +149,10 @@ export function JobdeskFun() {
       else if (what === "done") finish();
       else if (what === "stop") hide();
       else if (what === "pause") pause();
-      else if (what === "resume") resume();
+      else if (what === "resume") {
+        setSearching(true);
+        resume();
+      }
       else if (what && typeof what === "object" && what.kind === "progress") progress(what);
     };
     window.addEventListener("jobdesk:fun", onEvent);
@@ -157,7 +170,7 @@ export function JobdeskFun() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-10 p-8"
+      className={`fixed inset-0 z-[1000] flex flex-col items-center justify-center overflow-y-auto p-8 ${searching ? "gap-6" : "gap-10"}`}
       style={{ background: "color-mix(in srgb, var(--bg) 97%, transparent)", color: "var(--fg)" }}
     >
       <p
@@ -169,6 +182,11 @@ export function JobdeskFun() {
         <span>{shown}</span>
         {JOBDESK_FUN.dots.includes(text) && <span style={{ visibility: "hidden" }}>{".".repeat(3 - dots)}</span>}
       </p>
+      {searching && howlOn && (
+        <div className="w-full max-w-2xl">
+          <HowlSearchScene progress={scanPct} found={found} />
+        </div>
+      )}
       <div className="w-full max-w-md" aria-label={`${rounded} percent`}>
         <HowlTrack pct={rounded} />
         <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: "color-mix(in srgb, var(--fg) 12%, transparent)" }}>
