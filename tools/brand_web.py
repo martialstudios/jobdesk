@@ -150,6 +150,87 @@ def main():
     edit(web, "src/app/api/apply/prefill/route.ts",
          'import { runPlanner } from "@/lib/apply/planner";',
          'import { runPlanner } from "@/lib/apply/planner";\nimport { scrubExampleProfile } from "@/lib/jobdesk/scrub";')
+    # Her saved application answers (My info + what earlier forms taught it,
+    # lib/jobdesk/answers.ts): the AI drafting a form gets them as notes, and
+    # any field they answer uses hers over the draft.
+    edit(web, "src/app/api/apply/prefill/route.ts",
+         'import { extractJsonObject } from "@/lib/extract-json-object.mjs";',
+         'import { extractJsonObject } from "@/lib/extract-json-object.mjs";\n'
+         'import { answerFor, answersForForms, answersMemo } from "@/lib/jobdesk/answers";')
+    edit(web, "src/app/api/apply/prefill/route.ts",
+         "      const mem = readMemory().trim();",
+         "      const saved = answersForForms();\n"
+         "      const mem = (readMemory().trim() + answersMemo(saved)).trim();")
+    edit(web, "src/app/api/apply/prefill/route.ts",
+         '      emit({ t: "done", answers: obj, truncated, count });',
+         "      let mine = 0;\n"
+         "      for (const f of s.fields) {\n"
+         "        const v = answerFor(f, saved);\n"
+         "        if (v) {\n"
+         "          (obj as Record<string, unknown>)[f.id] = { value: v, needs_confirmation: false };\n"
+         "          mine++;\n"
+         "        }\n"
+         "      }\n"
+         "      log(`Used ${mine} of her saved answers`);\n"
+         '      emit({ t: "done", answers: obj, truncated, count });')
+    # If the AI draft fails, her saved answers still fill what they can.
+    edit(web, "src/app/api/apply/prefill/route.ts",
+         "        failed = true;\n        log(`ERROR: ${m}`);\n",
+         "        failed = true;\n"
+         "        const s0 = sessionId ? getSession(sessionId) : undefined;\n"
+         "        if (s0) {\n"
+         "          const st = answersForForms();\n"
+         "          const mine: Record<string, unknown> = {};\n"
+         "          for (const f of s0.fields) {\n"
+         "            const v = answerFor(f, st);\n"
+         "            if (v) mine[f.id] = { value: v, needs_confirmation: false };\n"
+         "          }\n"
+         "          if (Object.keys(mine).length) emit({ t: \"done\", answers: mine, count: Object.keys(mine).length });\n"
+         "        }\n"
+         "        log(`ERROR: ${m}`);\n")
+    # What she approves on a form ("Fill the real form") is kept for next time.
+    edit(web, "src/components/apply/apply-provider.tsx",
+         '      const r = await fetch("/api/apply/fill", {',
+         '      void fetch("/api/jobdesk/answers/learn", { method: "POST", headers: { "Content-Type": "application/json" }, '
+         "body: JSON.stringify({ fields, answers, company: companyRef.current }) }).catch(() => {});\n"
+         '      const r = await fetch("/api/apply/fill", {')
+    # Approve & submit needs the open form's session.
+    edit(web, "src/components/apply/apply-provider.tsx",
+         "  reset: () => void;\n};",
+         "  reset: () => void;\n  getSessionId: () => string | null;\n};")
+    edit(web, "src/components/apply/apply-provider.tsx",
+         "    () => ({ status, url, title, company, n, from, fields, answers, meta, steps, shots, prefillLog, issues, driveSteps, error, open, prefill, setAnswer, fill, agentFill, reset }),",
+         "    () => ({ status, url, title, company, n, from, fields, answers, meta, steps, shots, prefillLog, issues, driveSteps, error, open, prefill, setAnswer, fill, agentFill, reset, getSessionId: () => sessionId.current }),")
+    # She watches Chrome fill it (career-ops keeps the window off-screen until
+    # the handoff), then approves the send in the app.
+    edit(web, "src/lib/apply/session.ts", '"--window-position=-3200,-3200"', '"--window-position=80,60"', count=2)
+    edit(web, "src/components/apply-view.tsx",
+         '                <span className="text-muted">Review it and click Submit yourself — career-ops never submits for you.</span>\n'
+         "              </div>\n"
+         "            </div>\n"
+         "          )}\n",
+         '                <span className="text-muted">Check it over in the Chrome window.</span>\n'
+         "              </div>\n"
+         "            </div>\n"
+         "          )}\n"
+         "          <ApproveSubmit />\n")
+    edit(web, "src/components/apply-view.tsx",
+         'import { useApply } from "@/components/apply/apply-provider";',
+         'import { useApply } from "@/components/apply/apply-provider";\nimport { ApproveSubmit } from "@/components/jobdesk/approve-submit";')
+    edit(web, "src/app/apply/page.tsx",
+         "          career-ops reads the real application form on your machine and re-renders it here in plain language, pre-filled\n"
+         "          from your CV. You verify every answer — then it fills the real form behind the scenes and you submit it yourself.\n"
+         "          It never submits for you.\n",
+         "          career-ops opens the real application form in Chrome and lists its questions here, filled in from your resume\n"
+         "          and My info. Check the answers, watch it fill the real form, then press Approve &amp; submit when it looks right.\n"
+         "          Nothing is sent until you do.\n")
+    edit(web, "src/components/apply-view.tsx",
+         "Click this once you have submitted the real form yourself.",
+         "Only if you pressed Submit in Chrome yourself.")
+    # My info: the answers job applications ask for, in the main menu.
+    edit(web, "src/lib/nav-items.ts",
+         'import { LayoutDashboard, Compass, ListChecks, Send, Radar, BarChart3, FileText, Settings } from "lucide-react";',
+         'import { LayoutDashboard, Compass, ListChecks, Send, Radar, BarChart3, FileText, Settings, UserRound } from "lucide-react";')
     # A search started from Find jobs keeps Find jobs' address (career-ops
     # moves it to /explore, its own screen, so a reload left Find jobs).
     edit(web, "src/components/explore/explore-provider.tsx",
@@ -202,6 +283,7 @@ def main():
   { href: "/my-list", label: "My list", icon: ListChecks },
   { href: "/follow-ups", label: "Follow-ups", icon: Send },
   { href: "/resume", label: "My resume", icon: FileText },
+  { href: "/my-info", label: "My info", icon: UserRound },
   { href: "/advanced", label: "Advanced", icon: Settings },
 ''')
     edit(web, "src/app/page.tsx", '  if (phase === "first-run") return <FirstRunHome />;\n',

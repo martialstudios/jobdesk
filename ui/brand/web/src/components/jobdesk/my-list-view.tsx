@@ -20,6 +20,7 @@ import { canAutofill } from "./apply-kind";
 import { CheerToast } from "./cheer";
 import { BrandLogo, prettyCompany } from "./brand-logo";
 import { AppliedTracker } from "./applied-tracker";
+import { MyInfoNudge } from "./my-info-nudge";
 
 const APPLY_KEY = "jobdesk:applying";
 
@@ -203,6 +204,7 @@ export function MyListView() {
             {open.length > 0 && "Check some to work on just those, or leave them all unchecked for all."}
           </p>
           {done.length > 0 && <AppliedTracker items={items} />}
+          <MyInfoNudge />
 
           {open.length > 0 && (
             <div className="mt-6 flex flex-wrap gap-2.5">

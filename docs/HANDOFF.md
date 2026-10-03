@@ -69,6 +69,8 @@ codesign --force --deep -s - "$A"; open "$A"     # server URL is in $T/home/.job
 | Find jobs: US only, mile radius, dream titles first, 3 per company, real names + logos | `jobdesk/find-view.tsx`, `brand-logo.tsx`, `lib/jobdesk/where.ts` (+ `public/jobdesk-us-places.tsv` Census data) | — |
 | Quick read per job (synopsis, company, perks, fit vs. dream) | `use-synopses.ts`, `api/jobdesk/synopsis`, `lib/jobdesk/synopsis.ts` (Haiku, cached in `.career-ops-web/jobdesk-synopsis`) | — |
 | My list (apply, score, tailor), job page | `my-list-view.tsx`, `job-view.tsx`, `lib/jobdesk/list.ts` | — |
+| Apply: her Chrome opens on-screen and fills the real form (Greenhouse, Lever, Ashby); her saved answers fill matching fields, the AI drafts the rest; she checks it, then **Approve & submit** (confirm step) clicks the form's own Submit and reports what the page said; sent = marked applied. Nothing is sent without that click. | `brand_web.py` (apply patches: prefill, apply-provider, session window, apply-view), `approve-submit.tsx`, `lib/jobdesk/submit.ts`, `api/jobdesk/submit` | — |
+| My info: what applications ask beyond the resume (contact, address, work authorization, sponsorship, start date, pay, education, how she heard, demographics with "I don't wish to answer"), every answer learned from forms (editable), and questions forms asked that she left empty | `my-info-view.tsx`, `my-info-nudge.tsx`, `lib/jobdesk/answers.ts` (`.career-ops-web/jobdesk-answers.json`), `api/jobdesk/answers`, `api/jobdesk/answers/learn` | — |
 | "Ryan says, You got this!" (first application only, with a celebration) | `cheer.tsx` | `BRAND_CHEER` |
 | Follow-ups (by next step / all applications, email drafts, outcomes, notes) | `follow-ups-view.tsx`, `plan.ts`, `api/jobdesk/followup-email` | — |
 | Tracker tiles (applied, waiting, follow up now, interviews, offers) on My list + Follow-ups | `applied-tracker.tsx` | — |
@@ -107,6 +109,12 @@ the one inherited default (career-ops's example search filter) is emptied.
 backup folder).
 
 ## Open items
+
+- **Approve & submit** was verified end to end on a local test form (filled,
+  sent, "Thank you for applying", celebration). Never test it on a real
+  employer's form; use a local page like the one in `docs/HANDOFF.md`'s test
+  notes. Ashby may refuse automated submits: then she presses Submit in
+  Chrome and Mark applied.
 
 - **Give Asal the DMG** (owner). Recommend she moves the app to Applications;
   first launch sets itself up (a few minutes).
