@@ -16,7 +16,8 @@ import { useApply } from "@/components/apply/apply-provider";
 import { useList, type ListItem } from "./use-list";
 import { queueTasks, useTasks, clearFailed } from "./tasks";
 import { tierOf } from "./match";
-import { canAutofill } from "./apply-kind";
+import { applyKind, canAutofill } from "./apply-kind";
+import { KindBadge } from "./kind-badge";
 import { CheerToast } from "./cheer";
 import { BrandLogo, prettyCompany } from "./brand-logo";
 import { AppliedTracker } from "./applied-tracker";
@@ -115,6 +116,11 @@ export function MyListView() {
     setApplying([]);
   };
   const openForm = (i: ListItem) => {
+    // Ashby turns down a browser the app drives: every answer drafted, she sends it.
+    if (applyKind(i.url, i.ats) === "assist") {
+      router.push(`/assist?${new URLSearchParams({ url: i.url, title: i.title, company: i.company, ...(i.n ? { n: i.n } : {}) })}`);
+      return;
+    }
     void apply.open(i.url, { prefill: true, company: i.company, n: i.n, from: "/my-list" });
     router.push("/apply");
   };
@@ -266,15 +272,7 @@ export function MyListView() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-foreground">{i.title}</span>
-                      {canAutofill(i.url, i.ats) ? (
-                        <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 align-middle text-[11px] text-brand-text" title="The app can fill in and send this application for you">
-                          <Wand2 className="size-3" /> Auto-apply
-                        </span>
-                      ) : (
-                        <span className="ml-2 rounded-full bg-surface px-2 py-0.5 align-middle text-[11px] text-muted" title="This company's form needs an account on their site">
-                          On their site
-                        </span>
-                      )}
+                      <KindBadge url={i.url} ats={i.ats} />
                       {applied && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
                           <Check className="size-3" /> Applied

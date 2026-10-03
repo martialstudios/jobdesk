@@ -142,6 +142,13 @@ def main():
          'import { BetaBanner } from "@/components/beta/beta-banner";',
          'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { BrandMusic } from "@/components/jobdesk/music";\nimport { TaskRunner } from "@/components/jobdesk/tasks";\n'
          'import { UpdateNotice } from "@/components/jobdesk/update-notice";')
+    # A back button at the top of every page (no browser toolbar in the app).
+    edit(web, "src/components/app-shell.tsx",
+         '<main className="flex-1 overflow-x-hidden">{children}</main>',
+         '<main className="flex-1 overflow-x-hidden"><BackButton />{children}</main>')
+    edit(web, "src/components/app-shell.tsx",
+         'import { JobdeskFun } from "@/components/jobdesk-fun";',
+         'import { JobdeskFun } from "@/components/jobdesk-fun";\nimport { BackButton } from "@/components/jobdesk/back-button";')
     # Apply drafts answers from config/profile.yml, which starts as a copy of
     # career-ops's example person: empty anything still identical to it first.
     edit(web, "src/app/api/apply/prefill/route.ts",
@@ -440,7 +447,9 @@ def main():
          '            <span className="text-faint">//</span> local-first · your machine\n'
          '          </p>\n', "")
     for rel in ("src/components/app-shell.tsx", "src/components/mobile-nav.tsx"):
-        edit(web, rel, "text-sm text-faint`}>local-first · v0</span>", "text-sm text-faint`}></span>")
+        # Their place: "Start over" (My resume's start-over section), on every page.
+        edit(web, rel, "text-sm text-faint`}>local-first · v0</span>",
+             "text-sm text-faint`}><a href=\"/resume#start-over\" className=\"hover:text-foreground\">Start over</a></span>")
 
     # JobDesk's start page shows its title for a moment while it redirects.
     edit(web, "public/jobdesk-start.html", "<title>JobDesk</title>", f"<title>{name}</title>")

@@ -7,14 +7,18 @@
 // here, typed into the form when sent, kept in My info), or one to apply to on
 // the company's site. She sends one, or every ready one after a single
 // confirm that lists them. Nothing is sent without that. A security code a job
-// site emails her gets a box on that job's card.
+// site emails her gets a box on that job's card. Ashby jobs (they turn down a
+// browser the app drives) get every answer drafted and a copy helper on the
+// card: she sends those from her own Chrome.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Check, CheckCircle2, ExternalLink, Eye, Loader2, Send } from "lucide-react";
 import { instrumentSerif } from "@/lib/fonts";
 import type { ApplyField } from "@/lib/apply/extract";
-import { canAutofill } from "./apply-kind";
+import { applyKind } from "./apply-kind";
+import { CopyPanel } from "./copy-panel";
+import { draftOnly } from "./draft";
 import { BrandLogo, prettyCompany } from "./brand-logo";
 import { CheerToast } from "./cheer";
 import type { ListItem } from "./use-list";
@@ -23,12 +27,13 @@ export const APPLY_ALL_KEY = "jobdesk:apply-all";
 const CONFIG_KEY = "career-ops:config";
 const AT_ONCE = 2;
 
-type Stage = "waiting" | "opening" | "drafting" | "filling" | "ready" | "own" | "sending" | "code" | "sent" | "failed";
+type Stage = "waiting" | "opening" | "drafting" | "filling" | "ready" | "own" | "sending" | "code" | "sent" | "failed" | "assist";
 type Job = {
   url: string;
   title: string;
   company: string;
   n?: string;
+  ats?: string;
   stage: Stage;
   note: string;
   sessionId?: string;
@@ -151,8 +156,9 @@ export function ApplyAllView() {
             title: i.title,
             company: i.company,
             n: i.n,
-            stage: canAutofill(i.url) ? "waiting" : "own",
-            note: canAutofill(i.url) ? "" : "This company's site can't be filled in from here. Apply there, then mark it applied on My list.",
+            ats: i.ats,
+            stage: applyKind(i.url, i.ats) === "own" ? "own" : "waiting",
+            note: applyKind(i.url, i.ats) === "own" ? "This company's site needs an account there, so you apply on their site. Then mark it applied on My list." : "",
             fields: [],
             answers: {},
             extra: {},
@@ -167,6 +173,14 @@ export function ApplyAllView() {
   // Fill them, AT_ONCE at a time.
   const fillOne = useCallback(
     async (j: Job) => {
+      // Ashby: draft every answer; she sends it from her own Chrome.
+      if (applyKind(j.url, j.ats) === "assist") {
+        patch(j.url, { stage: "drafting", note: "Writing your answers…" });
+        const d = await draftOnly(j.url);
+        if ("error" in d) patch(j.url, { stage: "own", note: d.error });
+        else patch(j.url, { stage: "assist", note: "", fields: d.fields, answers: d.answers });
+        return;
+      }
       patch(j.url, { stage: "opening", note: "Opening the form…" });
       try {
         const r = await post("/api/apply/session", { url: j.url, cliId: cliId() });
@@ -249,6 +263,9 @@ export function ApplyAllView() {
           anySent.current = true;
           patch(j.url, { stage: "sent", note: d.message });
           void post("/api/apply/close", { sessionId: j.sessionId });
+        } else if (d.reason === "flagged") {
+          patch(j.url, { stage: "assist", note: d.message });
+          void post("/api/apply/close", { sessionId: j.sessionId });
         } else if (d.reason === "code") {
           patch(j.url, { stage: "code", note: d.message, code: "" });
         } else {
@@ -321,8 +338,9 @@ export function ApplyAllView() {
 
       {jobs.length > 0 && (
         <p className="mt-4 text-sm text-muted">
-          {jobs.filter((j) => j.stage !== "own").length} auto-apply
-          {jobs.some((j) => j.stage === "own") && ` · ${jobs.filter((j) => j.stage === "own").length} on their own site (Workday and similar need an account there, so you apply on their site)`}
+          {jobs.filter((j) => applyKind(j.url, j.ats) === "auto").length} sent by the app
+          {jobs.some((j) => applyKind(j.url, j.ats) === "assist") && ` · ${jobs.filter((j) => applyKind(j.url, j.ats) === "assist").length} filled in for you to send`}
+          {jobs.some((j) => applyKind(j.url, j.ats) === "own") && ` · ${jobs.filter((j) => applyKind(j.url, j.ats) === "own").length} on their own site`}
         </p>
       )}
       {jobs.length > 0 && (
@@ -417,6 +435,10 @@ export function ApplyAllView() {
                 </div>
               )}
 
+              {j.stage === "assist" && (
+                <CopyPanel url={j.url} company={j.company} n={j.n} fields={j.fields} answers={j.answers} onSent={() => patch(j.url, { stage: "sent", note: "" })} />
+              )}
+
               {j.stage === "code" && (
                 <label className="mt-3 block rounded-lg border border-brand/40 bg-brand/5 p-3 text-sm">
                   <span className="text-foreground">Security code from the email</span>
@@ -500,6 +522,7 @@ function StageChip({ j, missing }: { j: Job; missing: number }) {
       </span>
     );
   if (j.stage === "code") return <span className={`${base} bg-brand/15 text-brand`}>Needs the emailed code</span>;
+  if (j.stage === "assist") return <span className={`${base} bg-sky-500/10 text-sky-700 dark:text-sky-300`}>Ready for you to send</span>;
   if (j.stage === "own") return <span className={`${base} bg-surface text-muted`}>Apply on their site</span>;
   if (j.stage === "failed")
     return (
