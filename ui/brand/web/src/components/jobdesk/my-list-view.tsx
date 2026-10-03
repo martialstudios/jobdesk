@@ -21,6 +21,7 @@ import { CheerToast } from "./cheer";
 import { BrandLogo, prettyCompany } from "./brand-logo";
 import { AppliedTracker } from "./applied-tracker";
 import { MyInfoNudge } from "./my-info-nudge";
+import { APPLY_ALL_KEY } from "./apply-all-view";
 
 const APPLY_KEY = "jobdesk:applying";
 
@@ -80,6 +81,16 @@ export function MyListView() {
   const current = items.find((i) => i.url === applying[0]);
   const startApplying = () => {
     const urls = chosen.map((i) => i.url);
+    // Several at once: Apply to all fills them side by side for one review.
+    if (urls.length > 1) {
+      try {
+        sessionStorage.setItem(APPLY_ALL_KEY, JSON.stringify(urls));
+      } catch {
+        /* the one-at-a-time walk-through still works */
+      }
+      router.push("/apply-all");
+      return;
+    }
     writeApplying(urls);
     setApplying(urls);
   };

@@ -7,6 +7,10 @@
 // tracker) and the first one gets its celebration. Not sent: what to fix, and
 // she can always press Submit in Chrome herself and Mark applied.
 //
+// Questions the form still has empty get a box here: what she types goes into
+// the form when she sends it (and into My info for next time). A job site that
+// emails a security code gets a box for that too.
+//
 // Mounted for the whole Apply page, not just while the fill is "done": a fill
 // whose fields didn't land hands the form to the AI for a moment ("done",
 // then filling again), and a panel that came and went with it would lose the
@@ -26,6 +30,8 @@ export function ApproveSubmit() {
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [cheer, setCheer] = useState<{ at: number; first: boolean } | null>(null);
+  const [extra, setExtra] = useState<Record<string, string>>({});
+  const [code, setCode] = useState("");
   // A new form starts fresh.
   const session = a.getSessionId();
   const [seenFill, setSeenFill] = useState(false);
@@ -34,12 +40,16 @@ export function ApproveSubmit() {
     setResult(null);
     setCheer(null);
     setSeenFill(false);
+    setExtra({});
+    setCode("");
   }, [session]);
   useEffect(() => {
     if (a.status === "done") setSeenFill(true);
   }, [a.status]);
   const ready = a.status === "done";
-  const empty = a.fields.filter((f) => f.required && f.type !== "file" && !(a.answers[f.id] || "").trim());
+  const empty = a.fields.filter((f) => f.required && f.type !== "file" && f.type !== "checkbox" && !(a.answers[f.id] || "").trim());
+  const stillEmpty = empty.filter((f) => !(extra[f.id] || "").trim());
+  const askingCode = result?.reason === "code";
 
   const send = async () => {
     setSending(true);
@@ -49,7 +59,14 @@ export function ApproveSubmit() {
       const r = await fetch("/api/jobdesk/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: a.getSessionId(), confirm: true }),
+        body: JSON.stringify({
+          sessionId: a.getSessionId(),
+          confirm: true,
+          extra,
+          fields: a.fields,
+          company: a.company,
+          code: askingCode ? code : undefined,
+        }),
       });
       const d = (await r.json()) as Result;
       setResult(d);
@@ -101,13 +118,51 @@ export function ApproveSubmit() {
     <div className="co-rise mt-4 rounded-xl border border-brand/30 bg-brand/5 px-4 py-4 text-sm">
       <p className="font-medium text-foreground">Look it over in the Chrome window. When it&apos;s right, send it from here.</p>
       {empty.length > 0 && (
-        <p className="mt-1.5 flex items-start gap-1.5 text-amber-700 dark:text-amber-300">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          Still empty: {empty.map((f) => f.label).slice(0, 4).join(", ")}
-          {empty.length > 4 ? ` and ${empty.length - 4} more` : ""}. Fill them in Chrome first.
-        </p>
+        <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+          <p className="flex items-start gap-1.5 text-amber-800 dark:text-amber-200">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            The form still needs {empty.length === 1 ? "this" : "these"}. Answer here and it goes into the form when you send it (and into My info for next time).
+          </p>
+          {empty.map((f) => (
+            <label key={f.id} className="mt-2 block">
+              <span className="text-foreground">{f.label.replace(/\s*\*\s*$/, "")}</span>
+              {f.options?.length ? (
+                <select
+                  value={extra[f.id] || ""}
+                  onChange={(e) => setExtra({ ...extra, [f.id]: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-border bg-transparent px-2.5 py-1.5 text-foreground"
+                >
+                  <option value="">Choose…</option>
+                  {f.options.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={extra[f.id] || ""}
+                  onChange={(e) => setExtra({ ...extra, [f.id]: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-border bg-transparent px-2.5 py-1.5 text-foreground outline-none focus:border-brand/60"
+                />
+              )}
+            </label>
+          ))}
+        </div>
       )}
-      {result && !result.ok && (
+      {askingCode && (
+        <label className="mt-3 block rounded-lg border border-brand/40 bg-brand/5 p-3">
+          <span className="text-foreground">Security code from the email</span>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.trim())}
+            autoFocus
+            inputMode="text"
+            className="mt-1 w-full rounded-lg border border-border bg-transparent px-2.5 py-1.5 font-mono tracking-widest text-foreground outline-none focus:border-brand/60"
+          />
+        </label>
+      )}
+      {result && !result.ok && !askingCode && (
         <div className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-200">
           <p>{result.message}</p>
           {result.errors && result.errors.length > 0 && (
@@ -119,13 +174,22 @@ export function ApproveSubmit() {
           )}
         </div>
       )}
-      {!confirming ? (
+      {askingCode && <p className="mt-2 text-amber-800 dark:text-amber-200">{result?.message}</p>}
+      {askingCode ? (
         <button
-          onClick={() => setConfirming(true)}
-          disabled={sending || !ready}
+          onClick={() => void send()}
+          disabled={sending || !ready || code.length < 4}
           className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
         >
-          <Send className="size-4" /> {ready ? "Approve & submit" : "Still filling…"}
+          {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />} {sending ? "Sending…" : "Enter the code & send"}
+        </button>
+      ) : !confirming ? (
+        <button
+          onClick={() => setConfirming(true)}
+          disabled={sending || !ready || stillEmpty.length > 0}
+          className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+        >
+          <Send className="size-4" /> {!ready ? "Still filling…" : stillEmpty.length ? `Answer ${stillEmpty.length} more to send` : "Approve & submit"}
         </button>
       ) : (
         <div className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3">

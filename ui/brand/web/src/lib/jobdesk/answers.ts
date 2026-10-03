@@ -231,6 +231,10 @@ export function learnFrom(fields: ApplyField[], answers: Record<string, string>,
     }
     if (value.length > 150 || examples.has(value)) continue;
     delete store.missing[k];
+    // Her phone, say, typed for one form: also My info's answer to that
+    // question, so forms that word it differently get it too.
+    const basic = basicFor(label);
+    if (basic && !store.basics[basic.key]) store.basics[basic.key] = value;
     const prev = store.learned[k];
     store.learned[k] = { label, value, at: now, uses: (prev?.uses ?? 0) + 1 };
   }

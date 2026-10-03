@@ -204,6 +204,9 @@ def main():
     # She watches Chrome fill it (career-ops keeps the window off-screen until
     # the handoff), then approves the send in the app.
     edit(web, "src/lib/apply/session.ts", '"--window-position=-3200,-3200"', '"--window-position=80,60"', count=2)
+    # Apply to all fills several forms, then she reviews them: an hour open,
+    # not 15 minutes.
+    edit(web, "src/lib/apply/session.ts", "now - s.createdAt > 15 * 60_000", "now - s.createdAt > 60 * 60_000")
     edit(web, "src/components/apply-view.tsx",
          '                <span className="text-muted">Review it and click Submit yourself — career-ops never submits for you.</span>\n'
          "              </div>\n"
