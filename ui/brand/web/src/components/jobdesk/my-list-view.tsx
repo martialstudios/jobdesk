@@ -266,6 +266,15 @@ export function MyListView() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-foreground">{i.title}</span>
+                      {canAutofill(i.url, i.ats) ? (
+                        <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 align-middle text-[11px] text-brand-text" title="The app can fill in and send this application for you">
+                          <Wand2 className="size-3" /> Auto-apply
+                        </span>
+                      ) : (
+                        <span className="ml-2 rounded-full bg-surface px-2 py-0.5 align-middle text-[11px] text-muted" title="This company's form needs an account on their site">
+                          On their site
+                        </span>
+                      )}
                       {applied && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
                           <Check className="size-3" /> Applied
