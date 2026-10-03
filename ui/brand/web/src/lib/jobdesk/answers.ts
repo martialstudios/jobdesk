@@ -168,7 +168,7 @@ export const keyOf = (label: string) =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
-const basicFor = (label: string) => BASICS.find((b) => b.match.test(label.trim()));
+export const basicFor = (label: string) => BASICS.find((b) => b.match.test(label.trim()));
 
 /** Picks the form's own option for a saved answer, or undefined if none fits. */
 export function pickOption(value: string, options: string[]): string | undefined {

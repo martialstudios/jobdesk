@@ -33,6 +33,7 @@ export function MyInfoView() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [justSaved, setJustSaved] = useState<string[]>([]);
   const timer = useRef(0);
 
   const load = () =>
@@ -68,6 +69,8 @@ export function MyInfoView() {
     const value = (draft[m.key] || "").trim();
     if (!value) return;
     await save({ learned: [{ key: m.key, label: m.label, value }] });
+    setJustSaved((s) => [...s, m.label]);
+    window.setTimeout(() => setJustSaved((s) => s.filter((x) => x !== m.label)), 4000);
     void load();
   };
   const editLearned = async (l: Learned, value: string) => {
@@ -102,6 +105,11 @@ export function MyInfoView() {
         </p>
       )}
 
+      {justSaved.length > 0 && (
+        <p className="mt-6 flex items-center gap-2 rounded-xl bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-800 dark:text-emerald-200">
+          <Check className="size-4" /> Saved {justSaved.map((l) => l.replace(/\s*\*\s*$/, "")).join(", ")}. Forms will fill it in from now on.
+        </p>
+      )}
       {missing.length > 0 && (
         <section className="mt-8 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5">
           <h2 className="font-medium text-foreground">Forms asked these and they were left empty</h2>

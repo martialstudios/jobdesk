@@ -2,7 +2,7 @@
 // answers, what forms taught it, and what forms asked that she hasn't answered.
 // POST: save basics, change or forget a learned answer, answer a missing one.
 
-import { BASICS, answersForForms, keyOf, readAnswers, writeAnswers } from "@/lib/jobdesk/answers";
+import { BASICS, answersForForms, basicFor, keyOf, readAnswers, writeAnswers } from "@/lib/jobdesk/answers";
 import { scrubExampleProfile } from "@/lib/jobdesk/scrub";
 
 export const runtime = "nodejs";
@@ -46,6 +46,9 @@ export async function POST(req: Request) {
     const label = l.label || store.learned[k]?.label || store.missing[k]?.label || k;
     store.learned[k] = { label, value, at: now, uses: store.learned[k]?.uses ?? 0 };
     delete store.missing[k];
+    // Her phone, say: also My info's answer to that question.
+    const basic = basicFor(label);
+    if (basic) store.basics[basic.key] = value;
   }
   writeAnswers(store);
   return Response.json({ ok: true });

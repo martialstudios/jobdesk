@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, ExternalLink, Eye, Loader2, Send } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, ExternalLink, Eye, Loader2, Send } from "lucide-react";
 import { instrumentSerif } from "@/lib/fonts";
 import type { ApplyField } from "@/lib/apply/extract";
 import { canAutofill } from "./apply-kind";
@@ -96,6 +96,8 @@ const missingOf = (j: Job) =>
 export function ApplyAllView() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Opened without picks from My list (another window, a bookmark): choose here.
+  const [choosing, setChoosing] = useState<{ url: string; title: string; company: string; on: boolean }[] | null>(null);
   const [confirmAll, setConfirmAll] = useState(false);
   const [cheer, setCheer] = useState<{ at: number; first: boolean } | null>(null);
   const jobsRef = useRef<Job[]>([]);
@@ -138,6 +140,10 @@ export function ApplyAllView() {
       .then((d) => {
         const items: ListItem[] = d.items || [];
         anySent.current = items.some((i) => i.status === "applied");
+        if (!urls.length) {
+          setChoosing(items.filter((i) => i.status !== "applied").map((i) => ({ url: i.url, title: i.title, company: i.company, on: true })));
+          return;
+        }
         const picked = items.filter((i) => urls.includes(i.url) && i.status !== "applied");
         setJobs(
           picked.map((i) => ({
@@ -189,6 +195,16 @@ export function ApplyAllView() {
     },
     [patch],
   );
+
+  const startChosen = () => {
+    const urls = (choosing || []).filter((c) => c.on).map((c) => c.url);
+    try {
+      sessionStorage.setItem(APPLY_ALL_KEY, JSON.stringify(urls));
+    } catch {
+      /* fine: this visit has them */
+    }
+    window.location.reload();
+  };
 
   useEffect(() => {
     if (!loaded || started.current) return;
@@ -261,7 +277,43 @@ export function ApplyAllView() {
         Nothing is sent until you say so.
       </p>
 
-      {loaded && jobs.length === 0 && (
+      {choosing && (
+        <div className="mt-8 rounded-2xl border border-border p-5">
+          {choosing.length === 0 ? (
+            <p className="text-foreground">
+              Nothing on <Link href="/my-list" className="text-brand underline-offset-2 hover:underline">My list</Link> to apply to yet.
+            </p>
+          ) : (
+            <>
+              <p className="font-medium text-foreground">Which jobs should I fill in?</p>
+              <ul className="mt-3 space-y-2">
+                {choosing.map((c) => (
+                  <li key={c.url}>
+                    <label className="flex cursor-pointer items-center gap-2.5 text-foreground">
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[hsl(26_73%_51%)]"
+                        checked={c.on}
+                        onChange={() => setChoosing(choosing.map((x) => (x.url === c.url ? { ...x, on: !x.on } : x)))}
+                      />
+                      {c.title} <span className="text-muted">· {prettyCompany(c.company)}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={startChosen}
+                disabled={!choosing.some((c) => c.on)}
+                className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 font-medium text-brand-foreground hover:bg-brand-200 disabled:opacity-50"
+              >
+                Fill in {choosing.filter((c) => c.on).length}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {loaded && !choosing && jobs.length === 0 && (
         <p className="mt-8 rounded-2xl border border-border p-6 text-foreground">
           No jobs picked. Go to <Link href="/my-list" className="text-brand underline-offset-2 hover:underline">My list</Link> and press Apply to all.
         </p>
@@ -323,10 +375,17 @@ export function ApplyAllView() {
 
               {["ready", "code"].includes(j.stage) && asked.length > 0 && (
                 <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-                  <p className="text-amber-800 dark:text-amber-200">The form needs these. They go into the form when you send it, and into My info.</p>
+                  <p className={missing.length ? "text-amber-800 dark:text-amber-200" : "text-emerald-700 dark:text-emerald-300"}>
+                    {missing.length
+                      ? "The form needs these. They go into the form when you send it, and into My info."
+                      : "All answered. They go into the form when you send it, and into My info."}
+                  </p>
                   {asked.map((f) => (
                     <label key={f.id} className="mt-2 block">
-                      <span className="text-foreground">{f.label.replace(/\s*\*\s*$/, "")}</span>
+                      <span className="flex items-center gap-1.5 text-foreground">
+                        {(j.extra[f.id] || "").trim() ? <Check className="size-3.5 text-emerald-600" /> : null}
+                        {f.label.replace(/\s*\*\s*$/, "")}
+                      </span>
                       {f.options?.length ? (
                         <select
                           value={j.extra[f.id] || ""}
