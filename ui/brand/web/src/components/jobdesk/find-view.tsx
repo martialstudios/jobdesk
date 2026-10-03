@@ -293,6 +293,12 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
   const more = pool.filter((o) => o.fit?.band === "weak");
   const shown = showMore ? [...main, ...more] : main;
   const scanning = ex.running || ex.phase === "casting" || ex.phase === "scanning";
+  // Every search gets its song (BRAND_MUSIC_SEARCH, when the build has one).
+  const wasScanning = useRef(false);
+  useEffect(() => {
+    if (scanning && !wasScanning.current) window.dispatchEvent(new CustomEvent("jobdesk:music", { detail: "search" }));
+    wasScanning.current = scanning;
+  }, [scanning]);
   // After the search: while it runs, results stream in one at a time and
   // would each become their own request.
   // Read automatically: the first jobs on the page (a long list would cost

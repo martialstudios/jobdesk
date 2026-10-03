@@ -11,20 +11,24 @@
 //   { kind: "progress", fraction, found }   the scan's progress (explore-provider)
 //   "done"    the first scan finished, found something or not (explore-provider)
 //   "stop"    something failed: get out of the way so the error shows
-//   "pause"   the resume is read and the quick questions are up: step aside
-//   "resume"  questions answered, searching now: carry on
+//   "pause"   the resume is read and the quick questions are up: step aside,
+//             once the last timed line (the breathing one) has had LAST_LINE_MS
+//   "resume"  questions answered, searching now: done (Find jobs shows its
+//             own searching scene while the results come in)
 
 import { useEffect, useState } from "react";
 import { instrumentSerif } from "@/lib/fonts";
 import { JOBDESK_FUN } from "@/lib/jobdesk-brand";
-import { HowlFlame, HowlTrack, howlOn } from "@/components/howl/decor";
-import { HowlSearchScene } from "@/components/howl/scene";
+import { HowlFlame, HowlTrack } from "@/components/howl/decor";
 
 const SAFETY_MS = 6 * 60 * 1000;
 // The bar: reading the CV fills up to READ_SHARE (an estimate, easing in);
 // the scan's real progress fills the rest.
 const READ_SHARE = 35;
 const READ_EASE_MS = 15000;
+// The last timed line before the hold line gets at least this long on screen
+// before the quick questions take over.
+const LAST_LINE_MS = 4000;
 
 type Progress = { kind: "progress"; fraction: number; found: number };
 
@@ -33,10 +37,6 @@ export function JobdeskFun() {
   const [pct, setPct] = useState(0);
   const [found, setFound] = useState(0);
   const [dots, setDots] = useState(1);
-  // Once the job search is running: its scene (the castle crossing the meadow)
-  // shows here too, since this screen covers the page that has it.
-  const [searching, setSearching] = useState(false);
-  const [scanPct, setScanPct] = useState(0);
 
   useEffect(() => {
     let lineTimer = 0;
@@ -46,8 +46,8 @@ export function JobdeskFun() {
     let startedAt = 0;
     let idx = 0;
     let shownAt = 0;
-    let pausedAt = 0;
     let paused = false;
+    let pauseWanted = false;
     let revealing = false;
     let finishWanted = false;
     let scanFraction = -1; // -1 until the scan reports
@@ -60,10 +60,11 @@ export function JobdeskFun() {
       window.clearInterval(ticker);
       lineTimer = revealTimer = safety = ticker = 0;
     };
+    const up = (on: boolean) => window.dispatchEvent(new CustomEvent("jobdesk:fun-up", { detail: on }));
     const hide = () => {
+      up(false);
       clearAll();
       startedAt = 0;
-      setSearching(false);
       revealing = false;
       finishWanted = false;
       setText(null);
@@ -87,10 +88,14 @@ export function JobdeskFun() {
     const show = (i: number) => {
       idx = Math.min(i, holdIndex);
       shownAt = Date.now();
+      // The resume is read: the questions wait for the last timed line.
+      if (pauseWanted && idx >= holdIndex) return stepAside();
       setText(lines[idx][0]);
       const secs = lines[idx][1];
       window.clearTimeout(lineTimer);
-      if (idx < holdIndex && secs !== null) {
+      if (pauseWanted && idx === holdIndex - 1) {
+        lineTimer = window.setTimeout(stepAside, LAST_LINE_MS);
+      } else if (idx < holdIndex && secs !== null) {
         lineTimer = window.setTimeout(() => !paused && !revealing && show(idx + 1), secs * 1000);
       } else if (finishWanted) {
         lineTimer = window.setTimeout(reveal, 1500);
@@ -99,38 +104,42 @@ export function JobdeskFun() {
     const start = () => {
       clearAll();
       startedAt = Date.now();
-      paused = revealing = finishWanted = false;
+      paused = revealing = finishWanted = pauseWanted = false;
       scanFraction = -1;
       setPct(0);
       setFound(0);
-      setSearching(false);
-      setScanPct(0);
       show(0);
+      up(true);
       safety = window.setTimeout(hide, SAFETY_MS);
       ticker = window.setInterval(tick, 450);
     };
-    // Questions between reading the resume and searching: step aside, then
-    // carry on from the next line.
-    const pause = () => {
-      if (!startedAt) return;
+    // Questions between reading the resume and searching: step aside, but
+    // not before the last timed line (the breathing one) has had its moment.
+    const stepAside = () => {
+      up(false);
       paused = true;
-      pausedAt = Date.now();
+      pauseWanted = false;
       window.clearTimeout(lineTimer);
       setText(null);
     };
+    const pause = () => {
+      if (!startedAt || paused) return;
+      const last = holdIndex - 1;
+      if (idx > last || (idx === last && Date.now() - shownAt >= LAST_LINE_MS)) return stepAside();
+      pauseWanted = true;
+      if (idx === last) {
+        window.clearTimeout(lineTimer);
+        lineTimer = window.setTimeout(stepAside, LAST_LINE_MS - (Date.now() - shownAt));
+      }
+    };
+    // Searching now: Find jobs has its own scene for that, so this is done.
     const resume = () => {
-      if (!startedAt || !paused) return;
-      paused = false;
-      // A line cut short by the questions (under half its time) plays again.
-      const secs = lines[idx][1];
-      const cut = secs !== null && pausedAt - shownAt < (secs * 1000) / 2;
-      show(cut ? idx : idx + 1);
+      if (!startedAt) return;
+      hide();
     };
     const progress = (p: Progress) => {
       if (!startedAt) return;
       scanFraction = Math.max(scanFraction, Math.min(1, p.fraction || 0));
-      setSearching(true);
-      setScanPct(scanFraction);
       bump(READ_SHARE + (98 - READ_SHARE) * scanFraction);
       setFound((f) => Math.max(f, p.found || 0));
     };
@@ -149,10 +158,7 @@ export function JobdeskFun() {
       else if (what === "done") finish();
       else if (what === "stop") hide();
       else if (what === "pause") pause();
-      else if (what === "resume") {
-        setSearching(true);
-        resume();
-      }
+      else if (what === "resume") resume();
       else if (what && typeof what === "object" && what.kind === "progress") progress(what);
     };
     window.addEventListener("jobdesk:fun", onEvent);
@@ -170,7 +176,7 @@ export function JobdeskFun() {
     <div
       role="status"
       aria-live="polite"
-      className={`fixed inset-0 z-[1000] flex flex-col items-center justify-center overflow-y-auto p-8 ${searching ? "gap-6" : "gap-10"}`}
+      className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-10 p-8"
       style={{ background: "color-mix(in srgb, var(--bg) 97%, transparent)", color: "var(--fg)" }}
     >
       <p
@@ -182,11 +188,6 @@ export function JobdeskFun() {
         <span>{shown}</span>
         {JOBDESK_FUN.dots.includes(text) && <span style={{ visibility: "hidden" }}>{".".repeat(3 - dots)}</span>}
       </p>
-      {searching && howlOn && (
-        <div className="w-full max-w-2xl">
-          <HowlSearchScene progress={scanPct} found={found} />
-        </div>
-      )}
       <div className="w-full max-w-md" aria-label={`${rounded} percent`}>
         <HowlTrack pct={rounded} />
         <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: "color-mix(in srgb, var(--fg) 12%, transparent)" }}>

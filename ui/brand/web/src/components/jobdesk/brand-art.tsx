@@ -69,17 +69,19 @@ export function BrandArt() {
     };
     const onEvent = (e: Event) => {
       const what = (e as CustomEvent).detail;
-      if (what === "start" || what === "resume") setOverlay(true);
-      if (what === "pause" || what === "done" || what === "stop") setOverlay(false);
       if (what !== "start") return;
       clear();
       timers.push(window.setTimeout(() => setTrip("across"), FLY_WAIT_MS));
       timers.push(window.setTimeout(() => setTrip("back"), FLY_WAIT_MS + FLY_MS));
       timers.push(window.setTimeout(() => setTrip("home"), FLY_WAIT_MS + FLY_MS + BACK_MS));
     };
+    // Above the loading screen for as long as it's actually up.
+    const onUp = (e: Event) => setOverlay(!!(e as CustomEvent<boolean>).detail);
     window.addEventListener("jobdesk:fun", onEvent);
+    window.addEventListener("jobdesk:fun-up", onUp);
     return () => {
       window.removeEventListener("jobdesk:fun", onEvent);
+      window.removeEventListener("jobdesk:fun-up", onUp);
       clear();
     };
   }, []);
