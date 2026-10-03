@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, ChevronDown, ExternalLink, Loader2, MapPin, RotateCw, Search, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ExternalLink, Loader2, MapPin, RotateCw, Search, Sparkles } from "lucide-react";
 import { useExplore } from "@/components/explore/explore-provider";
 import { paramsToFilters, type DiscoveredOffer, type ExploreFilters } from "@/lib/explore";
 import { instrumentSerif } from "@/lib/fonts";
@@ -20,7 +20,8 @@ import { useSynopses, type SynopsisState } from "./use-synopses";
 import { howlOn } from "@/components/howl/decor";
 import { HowlSearchScene } from "@/components/howl/scene";
 
-import { canAutofill } from "./apply-kind";
+import { canAutofill, kindRank } from "./apply-kind";
+import { KindBadge } from "./kind-badge";
 import { BrandLogo, prettyCompany } from "./brand-logo";
 
 // The job boards whose forms Apply can fill in (see apply-kind.ts).
@@ -137,6 +138,7 @@ function QuickRead({ s, open, onToggle, onRead, company }: { s: SynopsisState; o
 type Area = { miles: number; remote: boolean };
 const AREA_KEY = "jobdesk:area";
 const AUTO_KEY = "jobdesk:auto-only";
+const PAGE_SIZE = 10;
 const DEFAULT_AREA: Area = { miles: 25, remote: true };
 const RADII = [10, 25, 50, 100, 0];
 type Where = { us: boolean | null; remote: boolean; miles: number | null };
@@ -237,8 +239,10 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
     () =>
       [...offers].sort(
         (a, b) =>
+          // The ones the app sends itself first, then the ones it fills for her
+          // to send, then the rest: she sees what it can do right away.
+          kindRank(a.url, a.ats) - kindRank(b.url, b.ats) ||
           dreamRank(a, dream) + bandRank(a) - (dreamRank(b, dream) + bandRank(b)) ||
-          Number(canAutofill(b.url, b.ats)) - Number(canAutofill(a.url, a.ats)) ||
           (b.fit?.score ?? 0) - (a.fit?.score ?? 0) ||
           (b.postedAt || "").localeCompare(a.postedAt || ""),
       ),
@@ -298,7 +302,18 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
   const notAuto = autoOnly ? (showFar ? [...local, ...far] : local).filter((o) => !auto(o)).length : 0;
   const main = pool.filter((o) => o.fit?.band !== "weak");
   const more = pool.filter((o) => o.fit?.band === "weak");
-  const shown = showMore ? [...main, ...more] : main;
+  const all = showMore ? [...main, ...more] : main;
+  // Pages of PAGE_SIZE, 1 2 3 … at the bottom: no endless scrolling.
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+  const at = Math.min(page, pages - 1);
+  const shown = all.slice(at * PAGE_SIZE, at * PAGE_SIZE + PAGE_SIZE);
+  const goPage = (p: number) => {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    document.querySelector("main")?.scrollTo?.({ top: 0, behavior: "smooth" });
+  };
+  useEffect(() => setPage(0), [offers, autoOnly, area, showFar]);
   const scanning = ex.running || ex.phase === "casting" || ex.phase === "scanning";
   // Every search gets its song (BRAND_MUSIC_SEARCH, when the build has one).
   const wasScanning = useRef(false);
@@ -472,7 +487,7 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
                 <input type="checkbox" className="size-4 accent-[hsl(26_73%_51%)]" checked={area.remote} onChange={() => setArea({ ...area, remote: !area.remote })} />
                 Remote (US)
               </label>
-              <label className="ml-1 inline-flex cursor-pointer items-center gap-1.5" title="Only jobs whose application the app can fill in and send for you">
+              <label className="ml-1 inline-flex cursor-pointer items-center gap-1.5" title="Hide jobs on company sites that need an account (Workday and the like)">
                 <input
                   type="checkbox"
                   className="size-4 accent-[hsl(26_73%_51%)]"
@@ -482,7 +497,7 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
                     store(AUTO_KEY, !autoOnly);
                   }}
                 />
-                Only auto-apply jobs
+                Only jobs the app fills in
               </label>
             </div>
           </div>
@@ -532,15 +547,7 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
                             <Check className="size-3" /> In your list
                           </span>
                         )}
-                        {canAutofill(o.url, o.ats) ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] text-brand-text" title="The app can fill in and send this application for you">
-                            <Wand2 className="size-3" /> Auto-apply
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] text-muted" title="This company's form needs an account on their site">
-                            Apply on their site
-                          </span>
-                        )}
+                        <KindBadge url={o.url} ats={o.ats} />
                       </div>
                       <div className="mt-0.5 truncate text-sm">
                         <span className="font-semibold text-foreground">{nameOf(o)}</span>
@@ -575,6 +582,31 @@ export function FindView({ seed }: { seed: ExploreFilters }) {
             <button onClick={() => setShowFar(true)} className="mt-4 mr-4 text-sm text-muted underline-offset-2 hover:underline">
               Show {far.length} more elsewhere in the US
             </button>
+          )}
+          {pages > 1 && (
+            <nav aria-label="Pages" className="mt-6 flex flex-wrap items-center justify-center gap-1.5">
+              <button onClick={() => goPage(at - 1)} disabled={at === 0} className="rounded-full px-3 py-1.5 text-sm text-muted hover:text-foreground disabled:opacity-40">
+                Previous
+              </button>
+              {Array.from({ length: pages }, (_, i) => (
+                <button
+                  key={i}
+                  onClick={() => goPage(i)}
+                  aria-current={i === at ? "page" : undefined}
+                  className={`size-9 rounded-full text-sm ${i === at ? "bg-brand font-medium text-brand-foreground" : "border border-border text-foreground hover:border-brand/50"}`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button onClick={() => goPage(at + 1)} disabled={at >= pages - 1} className="rounded-full px-3 py-1.5 text-sm text-muted hover:text-foreground disabled:opacity-40">
+                Next
+              </button>
+            </nav>
+          )}
+          {pages > 1 && (
+            <p className="mt-2 text-center text-xs text-faint">
+              Jobs {at * PAGE_SIZE + 1}–{Math.min(all.length, at * PAGE_SIZE + PAGE_SIZE)} of {all.length}
+            </p>
           )}
           {more.length > 0 && !showMore && (
             <button onClick={() => setShowMore(true)} className="mt-4 text-sm text-muted underline-offset-2 hover:underline">

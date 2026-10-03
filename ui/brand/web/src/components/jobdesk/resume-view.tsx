@@ -112,6 +112,16 @@ type Mode = "view" | "edit" | "ask" | "upload";
 // Starting over, or handing the app to someone else.
 function StartFresh() {
   const [asking, setAsking] = useState(false);
+  // "Start over" in the sidebar links here (#start-over).
+  const [glow, setGlow] = useState(false);
+  useEffect(() => {
+    if (window.location.hash !== "#start-over") return;
+    const t = window.setTimeout(() => {
+      document.getElementById("start-over")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setGlow(true);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const go = async () => {
@@ -139,8 +149,8 @@ function StartFresh() {
     }
   };
   return (
-    <section className="mt-12 rounded-2xl border border-border p-5">
-      <h2 className="font-medium text-foreground">Start fresh</h2>
+    <section id="start-over" className={`mt-12 rounded-2xl border p-5 transition-colors ${glow ? "border-brand" : "border-border"}`}>
+      <h2 className="font-medium text-foreground">Start over from scratch</h2>
       <p className="mt-1 text-sm text-muted">
         Starting over, or giving this app to someone else? This clears the resume, your answers, My list, follow-ups,
         scores and tailored resumes, and takes you back to the start. Nothing is deleted: it all goes into a backup folder.

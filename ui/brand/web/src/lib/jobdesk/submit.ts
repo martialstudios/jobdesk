@@ -16,7 +16,10 @@ import type { ApplyField } from "@/lib/apply/extract";
 
 export type SubmitResult =
   | { ok: true; message: string }
-  | { ok: false; reason: "no-session" | "captcha" | "no-button" | "errors" | "unclear" | "code"; message: string; errors?: string[] };
+  | { ok: false; reason: "no-session" | "captcha" | "no-button" | "errors" | "unclear" | "code" | "flagged"; message: string; errors?: string[] };
+
+// The site's spam check turned down a send from a browser the app drives.
+const FLAGGED = /flagged as (possible )?spam|couldn.?t submit your application|suspicious activity|automated (browser|submission)/i;
 
 const CODE_TEXT = /security code|verification code|confirmation code|enter (the|your) code|code (we|was) (sent|emailed)|we('ve| have)? (sent|emailed) (you )?(a|an|the) (code|email)/i;
 
@@ -100,7 +103,7 @@ export async function submitSession(id: string, opts: SubmitOptions = {}): Promi
   while (Date.now() < deadline) {
     await page.waitForTimeout(1000);
     const state = await page
-      .evaluate(({ thanks, code }: { thanks: string; code: string }) => {
+      .evaluate(({ thanks, code, spam }: { thanks: string; code: string; spam: string }) => {
         const body = document.body?.innerText || "";
         const inFrames = Array.from(document.querySelectorAll("iframe"))
           .map((f) => {
@@ -124,9 +127,17 @@ export async function submitSession(id: string, opts: SubmitOptions = {}): Promi
         }
         errs.splice(6);
         const askedCode = new RegExp(code, "i").test(text);
-        return { said: said ? text.slice(Math.max(0, said.index - 40), said.index + 120).replace(/\s+/g, " ").trim() : "", errs, askedCode };
-      }, { thanks: THANKS.source, code: CODE_TEXT.source })
-      .catch(() => ({ said: "", errs: [] as string[], askedCode: false }));
+        const flagged = new RegExp(spam, "i").test(text);
+        return { said: said ? text.slice(Math.max(0, said.index - 40), said.index + 120).replace(/\s+/g, " ").trim() : "", errs, askedCode, flagged };
+      }, { thanks: THANKS.source, code: CODE_TEXT.source, spam: FLAGGED.source })
+      .catch(() => ({ said: "", errs: [] as string[], askedCode: false, flagged: false }));
+    if (state.flagged) {
+      return {
+        ok: false,
+        reason: "flagged",
+        message: "This company's job site turned the app's send down as possible spam (it does that to any browser the app drives). Every answer is ready below: send it from your own Chrome.",
+      };
+    }
     if (state.said) return { ok: true, message: state.said };
     // A code she pasted that the site turned down: ask for it again.
     if (opts.code && state.errs.length) {

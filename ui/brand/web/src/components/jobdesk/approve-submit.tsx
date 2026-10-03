@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Send } from "lucide-react";
 import { useApply } from "@/components/apply/apply-provider";
 import { CheerToast } from "./cheer";
+import { CopyPanel } from "./copy-panel";
 
 type Result = { ok: boolean; message: string; reason?: string; errors?: string[] };
 
@@ -103,6 +104,20 @@ export function ApproveSubmit() {
   };
 
   if (!session || (!seenFill && !result)) return null;
+
+  // The site's spam check turned the app's send down: she sends it from her Chrome.
+  if (result?.reason === "flagged") {
+    return (
+      <CopyPanel
+        url={a.url}
+        company={a.company}
+        n={a.n || undefined}
+        fields={a.fields}
+        answers={{ ...a.answers, ...extra }}
+        intro={result.message}
+      />
+    );
+  }
 
   if (result?.ok) {
     return (

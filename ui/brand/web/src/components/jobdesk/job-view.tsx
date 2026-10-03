@@ -13,7 +13,7 @@ import { useJobs } from "@/components/jobs/job-store";
 import { useApply } from "@/components/apply/apply-provider";
 import { tierOf } from "./match";
 import { Doc } from "./doc";
-import { canAutofill } from "./apply-kind";
+import { applyKind, canAutofill } from "./apply-kind";
 import { BrandLogo, prettyCompany } from "./brand-logo";
 
 type Job = {
@@ -74,6 +74,11 @@ export function JobView({ n }: { n: string }) {
   const tailor = () =>
     startJob({ title: `Tailoring resume · ${job.company}`, subtitle: job.role, kind: "pdf", input: n, page: `/job/${n}` });
   const applyNow = () => {
+    // Ashby turns down a browser the app drives: every answer drafted, she sends it.
+    if (applyKind(job.url) === "assist") {
+      router.push(`/assist?${new URLSearchParams({ url: job.url, title: job.role || "", company: job.company, n: String(n) })}`);
+      return;
+    }
     void apply.open(job.url, { prefill: true, company: job.company, n, from: `/job/${n}` });
     router.push("/apply");
   };
